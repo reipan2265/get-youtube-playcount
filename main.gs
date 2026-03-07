@@ -578,14 +578,20 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
 
   const C = v1 / Math.pow(d1, alpha);
 
-  // [pub,0] と [t1,v1] の間に N 点を線形時間間隔で挿入
-  const N = 8;
+  // SAMPLING.RULES と同じ頻度で補完点を生成する
+  // keepEveryHours: null（30日以内）はトリガー間隔の 1 時間として扱う
   const newRows = [];
-  for (let i = 1; i < N; i++) {
-    const d = d1 * (i / N);
+  let curMs = t0.getTime();
+  while (true) {
+    const ageDays = (curMs - t0.getTime()) / MS_PER_DAY;
+    const rule     = CONFIG.SAMPLING.RULES.find(r => ageDays <= r.maxDays);
+    const stepMs   = (rule && rule.keepEveryHours ? rule.keepEveryHours : 1) * MS_PER_HOUR;
+    curMs += stepMs;
+    if (curMs >= t1.getTime()) break;
+    const d = curMs - t0.getTime();
     const v = Math.round(C * Math.pow(d, alpha));
     if (v <= 0) continue;
-    newRows.push([new Date(t0.getTime() + d), v]);
+    newRows.push([new Date(curMs), v]);
   }
   if (newRows.length === 0) return;
 
