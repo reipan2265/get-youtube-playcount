@@ -497,8 +497,8 @@ function buildComparisonChart_(compSheet, rows, cols) {
     })
     .setOption('vAxis', {
       format: '#,###',
-      gridlines: { color: '#f0f0f0' },
-      minorGridlines: { count: 4, color: '#d0d0d0' },
+      gridlines: { color: '#b0b0b0' },
+      minorGridlines: { count: 4, color: '#e8e8e8' },
     })
     .build();
 
