@@ -423,7 +423,7 @@ function renderComparisonSheet_(compSheet, tableValues) {
 
   compSheet.getRange(1, 1, rows, cols).setValues(tableValues);
   // ヘッダー行の日時列を書式設定
-  compSheet.getRange(1, 3, 1, cols - 2).setNumberFormat('yyyy/MM/dd HH:mm');
+  compSheet.getRange(1, 3, 1, cols - 2).setNumberFormat('yyyy/MM/dd');
   // B列（1日平均）を強調
   compSheet.getRange(1, 2, rows, 1).setBackground('#fff2cc').setFontWeight('bold');
   // ヘッダー行を固定
@@ -496,7 +496,6 @@ function buildComparisonChart_(compSheet, rows, cols) {
       slantedTextAngle: 30,
       textStyle: { fontSize: 9 },
       gridlines: { count: -1 },
-      format: 'yyyy/MM',
     })
     .setOption('vAxis', {
       format: '#,###',
