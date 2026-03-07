@@ -562,9 +562,10 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
   const d2 = t2.getTime() - t0.getTime();
   if (d1 <= 0 || d2 <= d1) return;
 
-  // べき乗則 v = C * d^alpha でフィット
-  const alpha = Math.log(v2 / v1) / Math.log(d2 / d1);
-  if (alpha <= 0 || alpha > 2) return; // 想定外の値はスキップ
+  // べき乗則 v = C * d^alpha でフィット（0.5倍で減衰を強調し曲線を鋭くする）
+  const rawAlpha = Math.log(v2 / v1) / Math.log(d2 / d1);
+  if (rawAlpha <= 0 || rawAlpha > 2) return; // 想定外の値はスキップ
+  const alpha = rawAlpha * 0.5;
   const C = v1 / Math.pow(d1, alpha);
 
   // [pub,0] と [t1,v1] の間に N 点を線形時間間隔で挿入
