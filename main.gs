@@ -548,24 +548,34 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
 
   const lastRow   = sheet.getLastRow();
   const dataCount = lastRow - 3;
-  if (dataCount < 3) return; // [pub,0], [t1,v1], [t2,v2] の3行が必要
+  if (dataCount < 2) return; // [pub,0] と最低1件の計測が必要
 
-  const data = sheet.getRange(5, 1, 2, 2).getValues();
   const t0 = publishedAt;
-  const [t1, v1] = [data[0][0], data[0][1]];
-  const [t2, v2] = [data[1][0], data[1][1]];
+  const row1 = sheet.getRange(5, 1, 1, 2).getValues()[0];
+  const [t1, v1] = [row1[0], row1[1]];
 
-  if (!(t1 instanceof Date) || !(t2 instanceof Date)) return;
-  if (v1 <= 0 || v2 <= v1) return;
+  if (!(t1 instanceof Date) || v1 <= 0) return;
 
   const d1 = t1.getTime() - t0.getTime();
-  const d2 = t2.getTime() - t0.getTime();
-  if (d1 <= 0 || d2 <= d1) return;
+  if (d1 <= 0) return;
 
-  // べき乗則 v = C * d^alpha でフィット（0.5倍で減衰を強調し曲線を鋭くする）
-  const rawAlpha = Math.log(v2 / v1) / Math.log(d2 / d1);
-  if (rawAlpha <= 0 || rawAlpha > 2) return; // 想定外の値はスキップ
-  const alpha = rawAlpha * 0.5;
+  // デフォルトは平方根曲線（後から追跡開始した動画向けフォールバック）
+  let alpha = 0.5;
+
+  // 2件目の計測が十分に時間が離れていればべき乗則でフィット
+  if (dataCount >= 3) {
+    const row2 = sheet.getRange(6, 1, 1, 2).getValues()[0];
+    const [t2, v2] = [row2[0], row2[1]];
+    const d2 = t2 instanceof Date ? t2.getTime() - t0.getTime() : 0;
+
+    if (v2 > v1 && d2 > d1 * 1.01) {
+      const rawAlpha = Math.log(v2 / v1) / Math.log(d2 / d1);
+      if (rawAlpha > 0 && rawAlpha <= 2) {
+        alpha = rawAlpha * 0.5;
+      }
+    }
+  }
+
   const C = v1 / Math.pow(d1, alpha);
 
   // [pub,0] と [t1,v1] の間に N 点を線形時間間隔で挿入
@@ -583,7 +593,7 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
   sheet.getRange(5, 1, newRows.length, 2).setValues(newRows);
 
   PropertiesService.getScriptProperties().setProperty(propKey, 'true');
-  console.log(`📈 初期成長曲線を補完 [${sheet.getName()}]: ${newRows.length} 点追加`);
+  console.log(`📈 初期成長曲線を補完 [${sheet.getName()}]: ${newRows.length} 点追加 (alpha=${alpha.toFixed(2)})`);
 }
 
 // ==========================================
