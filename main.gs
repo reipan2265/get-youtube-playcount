@@ -189,7 +189,7 @@ function getOrCreateVideoSheet_(ss, sheetName, fullTitle, publishedAt) {
   if (sheet) {
     // 既存シートでも投稿日が未記入なら補完
     if (!sheet.getRange('A2').getValue()) {
-      sheet.getRange('A2').setValue(publishedAt).setFontColor('white');
+      sheet.getRange('A2').setValue(publishedAt);
     }
     return sheet;
   }
@@ -199,8 +199,8 @@ function getOrCreateVideoSheet_(ss, sheetName, fullTitle, publishedAt) {
 
   // A1: タイトル（表示用）
   sheet.getRange('A1').setValue(fullTitle).setFontWeight('bold');
-  // A2: 投稿日（グラフ起点計算用・白文字で非表示風に）
-  sheet.getRange('A2').setValue(publishedAt).setFontColor('white');
+  // A2: 投稿日（グラフ起点計算用）
+  sheet.getRange('A2').setValue(publishedAt);
   // A3:B3: ヘッダー行
   sheet.getRange('A3:B3').setValues([['日時', '再生数']]).setBackground('#eeeeee');
   sheet.setFrozenRows(3);
@@ -321,6 +321,7 @@ function updateComparisonSheet_(ss) {
 
   renderComparisonSheet_(compSheet, tableValues);
   buildComparisonChart_(compSheet, tableValues.length, tableValues[0].length);
+  buildElapsedDaysChart_(compSheet, videoSheets, publishDateMap, tableValues[0].length, tableValues.length);
 }
 
 /**
@@ -420,7 +421,7 @@ function renderComparisonSheet_(compSheet, tableValues) {
   }
 
   // いったん全列を表示状態に戻す（前回の非表示をリセット）
-  compSheet.showColumns(1, cols);
+  compSheet.showColumns(1, compSheet.getMaxColumns());
 
   compSheet.getRange(1, 1, rows, cols).setValues(tableValues);
   // ヘッダー行の日時列を書式設定
@@ -510,7 +511,111 @@ function buildComparisonChart_(compSheet, rows, cols) {
 }
 
 // ==========================================
-// 8. ユーティリティ
+// 8. 投稿日起点グラフ
+// ==========================================
+/**
+ * 全動画の横軸を「投稿日からの経過日数」に正規化した折れ線グラフを生成する。
+ * ヘルパーテーブルをメインテーブルの右端+5列目に書き込み、列を非表示にしてグラフのデータ源とする。
+ * @param {GoogleAppsScript.Spreadsheet.Sheet}   compSheet
+ * @param {GoogleAppsScript.Spreadsheet.Sheet[]} videoSheets
+ * @param {object} publishDateMap  { sheetName: Date }
+ * @param {number} mainTableCols  メインテーブルの列数
+ * @param {number} mainTableRows  メインテーブルの行数（グラフ位置の計算用）
+ */
+function buildElapsedDaysChart_(compSheet, videoSheets, publishDateMap, mainTableCols, mainTableRows) {
+  const validSheets = videoSheets.filter(sh => publishDateMap[sh.getName()]);
+  if (validSheets.length === 0) return;
+
+  // ① 各動画のデータを「経過時間バケツ(h) → 再生数」にマップ
+  const videoMaps = validSheets.map(sh => {
+    const pubDate = publishDateMap[sh.getName()];
+    const map     = new Map();
+    map.set(0, 0); // 投稿日 = 起点 0 再生
+    const lastRow = sh.getLastRow();
+    if (lastRow >= 4) {
+      sh.getRange(4, 1, lastRow - 3, 2).getValues().forEach(row => {
+        if (!(row[0] instanceof Date)) return;
+        const elapsedMs = row[0].getTime() - pubDate.getTime();
+        if (elapsedMs < 0) return;
+        const key = getRoundedElapsedHours_(elapsedMs);
+        map.set(key, row[1]); // 同バケツは上書き（最新値）
+      });
+    }
+    return map;
+  });
+
+  // ② 全バケツの和集合（ソート済み）
+  const allHoursSet = new Set();
+  videoMaps.forEach(map => map.forEach((_, h) => allHoursSet.add(h)));
+  const sortedHours = [...allHoursSet].sort((a, b) => a - b);
+
+  // ③ テーブル構築
+  const titleRow = ['経過日数', ...validSheets.map(sh => sh.getRange('A1').getValue() || sh.getName())];
+  const dataRows = sortedHours.map(h => [
+    Math.round(h / 24 * 100) / 100, // 経過日数（小数第2位まで）
+    ...videoMaps.map(map => map.has(h) ? map.get(h) : null),
+  ]);
+  const tableData = [titleRow, ...dataRows];
+
+  // ④ メインテーブル右端+5列目にヘルパーテーブルを書き込む
+  const startCol = mainTableCols + 5;
+  const numRows  = tableData.length;
+  const numCols  = tableData[0].length;
+  if (compSheet.getMaxColumns() < startCol + numCols - 1) {
+    compSheet.insertColumnsAfter(compSheet.getMaxColumns(), startCol + numCols - 1 - compSheet.getMaxColumns());
+  }
+  compSheet.getRange(1, startCol, numRows, numCols).setValues(tableData);
+  compSheet.hideColumns(startCol, numCols); // ユーザーに見せない
+
+  // ⑤ グラフ作成（既存の1枚目グラフの下に配置）
+  const { WIDTH, HEIGHT } = CONFIG.CHART;
+  const chartRow = mainTableRows + 2 + Math.ceil(HEIGHT / 21) + 5;
+
+  const chart = compSheet.newChart()
+    .asLineChart()
+    .addRange(compSheet.getRange(1, startCol, numRows, numCols))
+    .setTransposeRowsAndColumns(true)
+    .setNumHeaders(1)
+    .setPosition(chartRow, 1, 0, 0)
+    .setOption('title', '全動画 再生数推移（投稿日起点）')
+    .setOption('width', WIDTH)
+    .setOption('height', HEIGHT)
+    .setOption('interpolateNulls', true)
+    .setOption('pointSize', 2)
+    .setOption('lineWidth', 2)
+    .setOption('legend', { position: 'right', textStyle: { fontSize: 10 } })
+    .setOption('chartArea', { left: '6%', top: '10%', width: '65%', height: '75%' })
+    .setOption('hAxis', {
+      title: '経過日数',
+      slantedText: true,
+      slantedTextAngle: 30,
+      textStyle: { fontSize: 9 },
+    })
+    .setOption('vAxis', {
+      format: '#,###',
+      gridlines: { color: '#b0b0b0' },
+      minorGridlines: { count: 4, color: '#e8e8e8' },
+    })
+    .build();
+
+  compSheet.insertChart(chart);
+  console.log(`📊 経過日数グラフを生成しました`);
+}
+
+/**
+ * 経過ミリ秒を SAMPLING.RULES の間隔でバケツ丸めした経過時間（h）を返す。
+ * @param {number} elapsedMs
+ * @returns {number}
+ */
+function getRoundedElapsedHours_(elapsedMs) {
+  const elapsedDays   = elapsedMs / MS_PER_DAY;
+  const rule          = CONFIG.SAMPLING.RULES.find(r => elapsedDays <= r.maxDays);
+  const intervalHours = rule && rule.keepEveryHours ? rule.keepEveryHours : 1;
+  return Math.round((elapsedMs / MS_PER_HOUR) / intervalHours) * intervalHours;
+}
+
+// ==========================================
+// 9. ユーティリティ
 // ==========================================
 /**
  * Date を "yyyy/MM/dd HH:mm"（JST）にフォーマットする。
@@ -534,7 +639,7 @@ function setNestedValue_(obj, key1, key2, value) {
 }
 
 // ==========================================
-// 9. 初期成長曲線の補完
+// 10. 初期成長曲線の補完
 // ==========================================
 /**
  * 投稿日(0再生)と最初の計測値の間を、べき乗則曲線で補完する。
@@ -603,7 +708,7 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
 }
 
 // ==========================================
-// 10. 管理用ユーティリティ（手動実行）
+// 11. 管理用ユーティリティ（手動実行）
 // ==========================================
 /**
  * 動画シートをすべて削除してリセットする（PRESERVE_SHEET_NAMES は保持）。
