@@ -574,7 +574,6 @@ function buildElapsedDaysChart_(compSheet, videoSheets, publishDateMap, mainTabl
   const chart = compSheet.newChart()
     .asLineChart()
     .addRange(compSheet.getRange(1, startCol, numRows, numCols))
-    .setTransposeRowsAndColumns(true)
     .setNumHeaders(1)
     .setPosition(chartRow, 1, 0, 0)
     .setOption('title', '全動画 再生数推移（投稿日起点）')
