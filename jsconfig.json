@@ -1,0 +1,7 @@
+{
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "experimentalDecorators": true
+  },
+  "exclude": ["node_modules"]
+}
