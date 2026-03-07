@@ -395,7 +395,7 @@ function buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimes
     .filter(Boolean)
     .sort((a, b) => b.lastVal - a.lastVal);
 
-  const headerRow = ['動画名', '1日平均再生数', ...sortedTimestamps];
+  const headerRow = ['動画名', '1日平均再生数', ...sortedTimestamps.map(ts => ts.substring(0, 10))];
   return [headerRow, ...videoRows.map(r => r.row)];
 }
 
@@ -491,7 +491,7 @@ function buildComparisonChart_(compSheet, rows, cols) {
     .setOption('chartArea', { left: '6%', top: '10%', width: '65%', height: '75%' })
     .setOption('hAxis', {
       slantedText: true,
-      slantedTextAngle: 45,
+      slantedTextAngle: 30,
       textStyle: { fontSize: 9 },
       gridlines: { count: -1 },
     })
