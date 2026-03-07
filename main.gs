@@ -78,6 +78,7 @@ function processVideo_(ss, id, index, total, now) {
     sheet.appendRow([now, viewCount]);
     console.log(`✅ [${index + 1}/${total}] ${sheetName}: ${viewCount.toLocaleString()} 回`);
 
+    fillInitialGrowthCurve_(sheet, publishedAt);
     runSampling_(sheet, publishedAt);
     updateIndividualChart_(sheet);
 
@@ -533,7 +534,59 @@ function setNestedValue_(obj, key1, key2, value) {
 }
 
 // ==========================================
-// 9. 管理用ユーティリティ（手動実行）
+// 9. 初期成長曲線の補完
+// ==========================================
+/**
+ * 投稿日(0再生)と最初の計測値の間を、べき乗則曲線で補完する。
+ * 2回目の計測が揃った時点で1度だけ実行し、ScriptProperties で管理する。
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {Date} publishedAt
+ */
+function fillInitialGrowthCurve_(sheet, publishedAt) {
+  const propKey = `curve_filled_${sheet.getName()}`;
+  if (PropertiesService.getScriptProperties().getProperty(propKey)) return;
+
+  const lastRow   = sheet.getLastRow();
+  const dataCount = lastRow - 3;
+  if (dataCount < 3) return; // [pub,0], [t1,v1], [t2,v2] の3行が必要
+
+  const data = sheet.getRange(5, 1, 2, 2).getValues();
+  const t0 = publishedAt;
+  const [t1, v1] = [data[0][0], data[0][1]];
+  const [t2, v2] = [data[1][0], data[1][1]];
+
+  if (!(t1 instanceof Date) || !(t2 instanceof Date)) return;
+  if (v1 <= 0 || v2 <= v1) return;
+
+  const d1 = t1.getTime() - t0.getTime();
+  const d2 = t2.getTime() - t0.getTime();
+  if (d1 <= 0 || d2 <= d1) return;
+
+  // べき乗則 v = C * d^alpha でフィット
+  const alpha = Math.log(v2 / v1) / Math.log(d2 / d1);
+  if (alpha <= 0 || alpha > 2) return; // 想定外の値はスキップ
+  const C = v1 / Math.pow(d1, alpha);
+
+  // [pub,0] と [t1,v1] の間に N 点を線形時間間隔で挿入
+  const N = 8;
+  const newRows = [];
+  for (let i = 1; i < N; i++) {
+    const d = d1 * (i / N);
+    const v = Math.round(C * Math.pow(d, alpha));
+    if (v <= 0) continue;
+    newRows.push([new Date(t0.getTime() + d), v]);
+  }
+  if (newRows.length === 0) return;
+
+  sheet.insertRowsAfter(4, newRows.length);
+  sheet.getRange(5, 1, newRows.length, 2).setValues(newRows);
+
+  PropertiesService.getScriptProperties().setProperty(propKey, 'true');
+  console.log(`📈 初期成長曲線を補完 [${sheet.getName()}]: ${newRows.length} 点追加`);
+}
+
+// ==========================================
+// 10. 管理用ユーティリティ（手動実行）
 // ==========================================
 /**
  * 動画シートをすべて削除してリセットする（PRESERVE_SHEET_NAMES は保持）。
