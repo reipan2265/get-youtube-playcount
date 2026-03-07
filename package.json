@@ -4,6 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "push": "clasp push",
+    "deploy": "clasp push && git add -A && git diff --cached --quiet || git commit -m 'Update GAS script' && git push",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

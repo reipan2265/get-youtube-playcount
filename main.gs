@@ -279,6 +279,7 @@ function updateIndividualChart_(sheet) {
 
   const builder = (charts.length > 0 ? charts[0].modify() : sheet.newChart())
     .asLineChart()
+    .clearRanges()
     .addRange(dataRange)
     .setPosition(1, 4, 0, 0)
     .setOption('title', title)
@@ -497,6 +498,7 @@ function buildComparisonChart_(compSheet, rows, cols) {
     .setOption('vAxis', {
       format: '#,###',
       gridlines: { color: '#f0f0f0' },
+      minorGridlines: { count: 4, color: '#d0d0d0' },
     })
     .build();
 
