@@ -604,10 +604,14 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
  * ⚠️ データが失われるため慎重に使用すること。
  */
 function resetSheets() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss    = SpreadsheetApp.getActiveSpreadsheet();
+  const props = PropertiesService.getScriptProperties();
   ss.getSheets()
     .filter(sh => !CONFIG.PRESERVE_SHEET_NAMES.includes(sh.getName()))
-    .forEach(sh => ss.deleteSheet(sh));
+    .forEach(sh => {
+      props.deleteProperty(`curve_filled_${sh.getName()}`);
+      ss.deleteSheet(sh);
+    });
   console.log('🧹 動画シートをリセットしました。');
 }
 
