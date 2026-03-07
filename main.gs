@@ -395,7 +395,7 @@ function buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimes
     .filter(Boolean)
     .sort((a, b) => b.lastVal - a.lastVal);
 
-  const headerRow = ['動画名', '1日平均再生数', ...sortedTimestamps.map(ts => ts.substring(0, 10))];
+  const headerRow = ['動画名', '1日平均再生数', ...sortedTimestamps.map(ts => ts.substring(0, 7))];
   return [headerRow, ...videoRows.map(r => r.row)];
 }
 
