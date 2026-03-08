@@ -20,6 +20,24 @@ const CONFIG = {
     HEIGHT:  850,
   },
 
+  // calibrateChannelAlpha() が使用するキャリブレーション参照データ。
+  // 各動画に個別に適用されるものではなく、チャンネル全体のデフォルト alpha を
+  // 統計的に推定するための入力データとして使う。
+  // date: 達成日（YYYY-MM-DD）、viewCount: その時点の再生数
+  MILESTONES: [
+    { sheetNameContains: 'カウントダウンラブ',    date: '2025-11-25', viewCount: 1000000 },
+    { sheetNameContains: 'KAWAII',               date: '2026-02-14', viewCount:  500000 },
+    { sheetNameContains: 'Karma',                date: '2026-01-15', viewCount:  300000 }, // 公開1ヶ月後（概算）
+    { sheetNameContains: 'SUPER DUPER',          date: '2026-02-15', viewCount:  300000 },
+    { sheetNameContains: 'ファイヴァーズ',         date: '2025-12-25', viewCount:  100000 },
+    { sheetNameContains: 'ボーダーレス',           date: '2026-01-15', viewCount:  100000 },
+    { sheetNameContains: '虹の行方',              date: '2025-11-25', viewCount:  100000 },
+    { sheetNameContains: 'Naraku',               date: '2026-01-05', viewCount:  100000 },
+    { sheetNameContains: 'BEAST MODE',           date: '2026-02-05', viewCount:  100000 },
+    { sheetNameContains: 'Ring Ring',            date: '2026-02-15', viewCount:  100000 },
+    { sheetNameContains: 'Oh Yeah',              date: '2026-03-08', viewCount:   50000 },
+  ],
+
   // データ間引き設定
   // keepEveryHours: null = 全件保持（トリガー間隔ごとに1件 = 実質1時間ごと）
   //                 数値 = その間隔（時間）ごとに1件保持
@@ -691,13 +709,25 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
 
   if (points.length === 0) return;
 
+  // 計測点に重みを付与（後の点ほど重く: [1, 2, 4]）
+  const allPoints = points.map((p, i) => ({ ...p, w: Math.pow(2, i) }));
+
+  // CONFIG.MILESTONES にマッチするマイルストーンがあれば高重みで追加
+  const milestone = CONFIG.MILESTONES.find(m => sheet.getName().includes(m.sheetNameContains));
+  if (milestone) {
+    const mMs = new Date(milestone.date).getTime() - t0;
+    if (mMs > 0 && milestone.viewCount > 0) {
+      allPoints.push({ d: mMs, v: milestone.viewCount, w: 8 }); // 重み 8 = 計測点より優先
+    }
+  }
+
   // log-log 空間での重み付き最小二乗法で alpha を推定
-  // Y = log(v) = log(C) + alpha * log(d) = log(C) + alpha * X
+  // Y = log(v) = log(C) + alpha * log(d)
   let alpha = 0.5; // フォールバック: 平方根曲線
-  if (points.length >= 2) {
-    const ws = points.map((_, i) => Math.pow(2, i)); // [1, 2, 4]: 後の点ほど重く
-    const xs = points.map(p => Math.log(p.d));
-    const ys = points.map(p => Math.log(p.v));
+  if (allPoints.length >= 2) {
+    const ws = allPoints.map(p => p.w);
+    const xs = allPoints.map(p => Math.log(p.d));
+    const ys = allPoints.map(p => Math.log(p.v));
 
     const W    = ws.reduce((s, w)    => s + w, 0);
     const xBar = ws.reduce((s, w, i) => s + w * xs[i], 0) / W;
@@ -708,7 +738,7 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
     if (den > 0) alpha = Math.max(0.1, Math.min(1.5, num / den));
   }
 
-  const { d: d1, v: v1 } = points[0];
+  const { d: d1, v: v1 } = points[0]; // 補完区間の終点は最初の計測点
   const C = v1 / Math.pow(d1, alpha);
 
   // SAMPLING.RULES と同じ頻度で補完点を生成する
@@ -729,7 +759,8 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
   sheet.insertRowsAfter(4, newRows.length);
   sheet.getRange(5, 1, newRows.length, 2).setValues(newRows);
   PropertiesService.getScriptProperties().setProperty(propKey, 'true');
-  console.log(`成長曲線を補完 [${sheet.getName()}]: ${newRows.length} 点追加 (alpha=${alpha.toFixed(2)})`);
+  const msNote = milestone ? ` milestone=${milestone.sheetNameContains}` : '';
+  console.log(`成長曲線を補完 [${sheet.getName()}]: ${newRows.length} 点追加 (alpha=${alpha.toFixed(2)}${msNote})`);
 }
 
 // ==========================================
