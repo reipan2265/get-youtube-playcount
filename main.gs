@@ -52,7 +52,10 @@ function main() {
   console.log('再生数取得を開始します...');
 
   const ss  = SpreadsheetApp.getActiveSpreadsheet();
+  // トリガーの遅延（〜数分）を吸収するため正時に切り捨てる
+  // 例: 13:01:05 に起動 → 13:00:00 として記録
   const now = new Date();
+  now.setMinutes(0, 0, 0);
 
   const videoIds = collectVideoIds_();
   console.log(`対象: ${videoIds.length} 本`);
