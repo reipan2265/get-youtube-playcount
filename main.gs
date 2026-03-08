@@ -2,23 +2,35 @@
 // 設定エリア（ここだけ編集してOK）
 // ==========================================
 const CONFIG = {
+  // 対象プレイリストの ID（不要な場合は空文字）
   PLAYLIST_ID: 'PLriG7RRWaKk-YG8N7y4Fr8C15NJqnkLYG',
+
+  // プレイリスト外で個別追加したい動画 ID
   EXTRA_VIDEO_IDS: ['Z_BpyttvaKI', 'WGrgo8-8XwY'],
+
+  // 全動画比較シートのシート名
   COMP_SHEET_NAME: '再生数比較',
+
+  // 削除・リセット対象から除外するシート名
   PRESERVE_SHEET_NAMES: ['再生数比較', 'シート1'],
+
+  // 比較グラフのサイズ（ピクセル）
   CHART: {
-    WIDTH: 2210,
-    HEIGHT: 850,
+    WIDTH:  2210,
+    HEIGHT:  850,
   },
+
+  // データ間引き設定
+  // keepEveryHours: null = 全件保持（トリガー間隔ごとに1件 = 実質1時間ごと）
+  //                 数値 = その間隔（時間）ごとに1件保持
   SAMPLING: {
     MIN_ROWS_TO_SAMPLE: 10,
-    // 経過日数ごとの保持間隔（時間）: null = 毎時, 6 = 6時間ごと, 等
     RULES: [
-      { maxDays: 30,  keepEveryHours: null },   // 30日以内: 全件保持
-      { maxDays: 90,  keepEveryHours: 6    },   // ~90日: 6時間ごと
-      { maxDays: 180, keepEveryHours: 12   },   // ~180日: 12時間ごと
-      { maxDays: 365, keepEveryHours: 24   },   // ~365日: 1日ごと
-      { maxDays: Infinity, keepEveryHours: 168 }, // 365日超: 週1
+      { maxDays:        30, keepEveryHours: null },  // 30日以内:  全件
+      { maxDays:        90, keepEveryHours:    6 },  // ~90日:   6時間ごと
+      { maxDays:       180, keepEveryHours:   12 },  // ~180日: 12時間ごと
+      { maxDays:       365, keepEveryHours:   24 },  // ~365日:  1日ごと
+      { maxDays: Infinity,  keepEveryHours:  168 },  // 365日超:   週1
     ],
   },
 };
@@ -27,47 +39,47 @@ const CONFIG = {
 // 定数
 // ==========================================
 const MS_PER_DAY  = 24 * 60 * 60 * 1000;
-const MS_PER_HOUR = 60 * 60 * 1000;
+const MS_PER_HOUR =      60 * 60 * 1000;
 
 // ==========================================
-// 1. メイン処理
+// 1. エントリーポイント
 // ==========================================
 /**
- * トリガーから呼び出すエントリーポイント。
- * 全動画の再生数を取得してシートに記録し、比較シートを更新する。
+ * トリガーから呼び出すメイン処理。
+ * 全動画の再生数を取得・記録し、比較シートを更新する。
  */
 function main() {
-  console.log('🚀 再生数取得プロセスを開始します...');
+  console.log('再生数取得を開始します...');
 
-  const ss    = SpreadsheetApp.getActiveSpreadsheet();
-  const now   = new Date();
+  const ss  = SpreadsheetApp.getActiveSpreadsheet();
+  const now = new Date();
 
   const videoIds = collectVideoIds_();
-  console.log(`🎬 処理対象: ${videoIds.length} 本`);
+  console.log(`対象: ${videoIds.length} 本`);
 
   videoIds.forEach((id, index) => processVideo_(ss, id, index, videoIds.length, now));
 
-  console.log('📊 比較シートを更新します...');
+  console.log('比較シートを更新します...');
   updateComparisonSheet_(ss);
-  console.log('✨ 全プロセス完了。');
+  console.log('完了。');
 }
 
 // ==========================================
 // 2. 動画ごとの処理
 // ==========================================
 /**
- * 1本の動画を処理する（取得 → シート書き込み → 間引き → グラフ更新）。
+ * 1本の動画を処理する（取得 → 記録 → 補完 → 間引き → グラフ更新）。
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
- * @param {string} id  YouTube動画ID
+ * @param {string} id     YouTube 動画 ID
  * @param {number} index  現在のインデックス（ログ用）
  * @param {number} total  総件数（ログ用）
- * @param {Date}   now  実行日時
+ * @param {Date}   now    実行日時
  */
 function processVideo_(ss, id, index, total, now) {
   try {
     const video = fetchVideoData_(id);
     if (!video) {
-      console.warn(`⚠️ [${index + 1}/${total}] ID:${id} が見つかりません。`);
+      console.warn(`[${index + 1}/${total}] 動画が見つかりません (id: ${id})`);
       return;
     }
 
@@ -76,14 +88,14 @@ function processVideo_(ss, id, index, total, now) {
     const sheet     = getOrCreateVideoSheet_(ss, sheetName, fullTitle, publishedAt);
 
     sheet.appendRow([now, viewCount]);
-    console.log(`✅ [${index + 1}/${total}] ${sheetName}: ${viewCount.toLocaleString()} 回`);
+    console.log(`[${index + 1}/${total}] ${sheetName}: ${viewCount.toLocaleString()} 回`);
 
     fillInitialGrowthCurve_(sheet, publishedAt);
     runSampling_(sheet, publishedAt);
     updateIndividualChart_(sheet);
 
   } catch (e) {
-    console.error(`❌ エラー (ID:${id}): ${e.message}\n${e.stack}`);
+    console.error(`[${index + 1}/${total}] エラー (id: ${id}): ${e.message}\n${e.stack}`);
   }
 }
 
@@ -92,8 +104,8 @@ function processVideo_(ss, id, index, total, now) {
 // ==========================================
 /**
  * YouTube Data API から動画情報を取得する。
- * @param {string} id
- * @returns {object|null} API レスポンスの items[0]、または null
+ * @param {string} id  YouTube 動画 ID
+ * @returns {object|null}  API レスポンスの items[0]、見つからない場合は null
  */
 function fetchVideoData_(id) {
   const res = YouTube.Videos.list('snippet,statistics', { id });
@@ -101,8 +113,8 @@ function fetchVideoData_(id) {
 }
 
 /**
- * APIレスポンスから必要フィールドを抽出して返す。
- * @param {object} video
+ * API レスポンスから必要フィールドを抽出する。
+ * @param {object} video  fetchVideoData_ の戻り値
  * @returns {{ fullTitle: string, viewCount: number, publishedAt: Date }}
  */
 function parseVideoData_(video) {
@@ -114,7 +126,7 @@ function parseVideoData_(video) {
 }
 
 /**
- * プレイリスト内の全動画IDを取得する（ページネーション対応）。
+ * プレイリスト内の全動画 ID を取得する（ページネーション対応）。
  * @returns {string[]}
  */
 function fetchPlaylistVideoIds_() {
@@ -134,19 +146,19 @@ function fetchPlaylistVideoIds_() {
       pageToken = res.nextPageToken ?? '';
     } while (pageToken);
   } catch (e) {
-    console.warn(`⚠️ プレイリスト取得失敗: ${e.message}`);
+    console.warn(`プレイリスト取得失敗: ${e.message}`);
   }
 
   return ids;
 }
 
 /**
- * EXTRA_VIDEO_IDS とプレイリストを合わせて重複排除した動画IDリストを返す。
+ * EXTRA_VIDEO_IDS とプレイリストを合わせて重複排除した動画 ID リストを返す。
  * @returns {string[]}
  */
 function collectVideoIds_() {
   const playlistIds = fetchPlaylistVideoIds_();
-  console.log(`📂 プレイリストから ${playlistIds.length} 本を検出。`);
+  console.log(`プレイリストから ${playlistIds.length} 本を検出`);
   return [...new Set([...CONFIG.EXTRA_VIDEO_IDS, ...playlistIds])];
 }
 
@@ -154,9 +166,10 @@ function collectVideoIds_() {
 // 4. シート操作
 // ==========================================
 /**
- * 動画タイトルからシート名を生成する（Sheets の制約: 31文字以内、特殊文字禁止）。
- * @param {string} fullTitle
- * @param {string} fallback  タイトルが空の場合に使う動画ID
+ * 動画タイトルからシート名を生成する。
+ * Google Sheets の制約: 31 文字以内、バックスラッシュ等の特殊文字禁止。
+ * @param {string} fullTitle  動画タイトル
+ * @param {string} fallback   タイトルが空の場合に使う動画 ID
  * @returns {string}
  */
 function buildSheetName_(fullTitle, fallback) {
@@ -164,11 +177,10 @@ function buildSheetName_(fullTitle, fallback) {
   const MAX_LEN = 31;
 
   let name = fullTitle.replace(/【.*?】/g, '').trim().replace(INVALID_CHARS, '_');
-
   if (!name) return fallback;
 
   if (name.length > MAX_LEN) {
-    const half = Math.floor((MAX_LEN - 1) / 2); // 省略記号1文字分を引く
+    const half = Math.floor((MAX_LEN - 1) / 2);
     name = name.substring(0, half) + '…' + name.substring(name.length - half);
   }
 
@@ -176,7 +188,7 @@ function buildSheetName_(fullTitle, fallback) {
 }
 
 /**
- * 動画シートを取得、なければ新規作成してヘッダーを書き込む。
+ * 動画シートを取得する。存在しなければ新規作成してヘッダーを書き込む。
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
  * @param {string} sheetName
  * @param {string} fullTitle
@@ -187,61 +199,50 @@ function getOrCreateVideoSheet_(ss, sheetName, fullTitle, publishedAt) {
   let sheet = ss.getSheetByName(sheetName);
 
   if (sheet) {
-    // 既存シートでも投稿日が未記入なら補完
+    // 既存シートで投稿日が未記入の場合のみ補完
     if (!sheet.getRange('A2').getValue()) {
       sheet.getRange('A2').setValue(publishedAt);
     }
     return sheet;
   }
 
-  console.log(`📝 新規シート作成: ${sheetName}`);
+  console.log(`シートを作成: ${sheetName}`);
   sheet = ss.insertSheet(sheetName);
 
-  // A1: タイトル（表示用）
   sheet.getRange('A1').setValue(fullTitle).setFontWeight('bold');
-  // A2: 投稿日（グラフ起点計算用）
   sheet.getRange('A2').setValue(publishedAt);
-  // A3:B3: ヘッダー行
   sheet.getRange('A3:B3').setValues([['日時', '再生数']]).setBackground('#eeeeee');
   sheet.setFrozenRows(3);
-
-  // 投稿日時点での0件レコードをグラフ起点として挿入
-  sheet.appendRow([publishedAt, 0]);
+  sheet.appendRow([publishedAt, 0]); // 投稿日時点の起点レコード（再生数 = 0）
 
   return sheet;
 }
 
 // ==========================================
-// 5. サンプリング（データの間引き）
+// 5. データ間引き（サンプリング）
 // ==========================================
 /**
- * 古いデータを間引いてシートの行数を抑制する。
- * CONFIG.SAMPLING.RULES に従い、経過日数ごとに保持間隔を変える。
+ * CONFIG.SAMPLING.RULES に従い、古いデータを間引いてシートの肥大化を抑制する。
+ * バケツ方式で均等に間引くため、記録タイミングのズレに強い。
  * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
  * @param {Date} publishedAt
  */
 function runSampling_(sheet, publishedAt) {
-  const lastRow   = sheet.getLastRow();
-  const dataCount = lastRow - 3; // ヘッダー3行を除いたデータ行数
-
+  const dataCount = sheet.getLastRow() - 3;
   if (dataCount < CONFIG.SAMPLING.MIN_ROWS_TO_SAMPLE) return;
 
   const values     = sheet.getRange(4, 1, dataCount, 2).getValues();
-  const seenBucket = new Set(); // バケツIDの重複チェック用
+  const seenBucket = new Set();
 
   const keepRows = values.filter((row, index) => {
-    // 先頭・末尾は必ず保持
-    if (index === 0 || index === values.length - 1) return true;
+    if (index === 0 || index === values.length - 1) return true; // 先頭・末尾は必ず保持
     if (!(row[0] instanceof Date)) return false;
 
     const ageDays = (row[0].getTime() - publishedAt.getTime()) / MS_PER_DAY;
     const rule    = CONFIG.SAMPLING.RULES.find(r => ageDays <= r.maxDays);
 
-    // keepEveryHours が null なら全件保持
     if (!rule || rule.keepEveryHours === null) return true;
 
-    // バケツ方式: 経過時間をkeepEveryHoursで割った整数が同じ行は最初の1件だけ保持
-    // 剰余方式と違い、記録タイミングがズレていても均等に間引ける
     const ageHours  = (row[0].getTime() - publishedAt.getTime()) / MS_PER_HOUR;
     const bucketKey = `${rule.keepEveryHours}_${Math.floor(ageHours / rule.keepEveryHours)}`;
 
@@ -250,24 +251,23 @@ function runSampling_(sheet, publishedAt) {
     return true;
   });
 
-  // 間引き後に最低保持数を下回るなら今回はスキップ
   if (keepRows.length < CONFIG.SAMPLING.MIN_ROWS_TO_SAMPLE) {
-    console.log(`⏭️ 間引きスキップ [${sheet.getName()}]: 間引き後 ${keepRows.length} 行 < 最低 ${CONFIG.SAMPLING.MIN_ROWS_TO_SAMPLE} 行`);
+    console.log(`間引きスキップ [${sheet.getName()}]: 間引き後 ${keepRows.length} 行 < 最低 ${CONFIG.SAMPLING.MIN_ROWS_TO_SAMPLE} 行`);
     return;
   }
 
   if (keepRows.length < values.length) {
-    console.log(`✂️ 間引き [${sheet.getName()}]: ${values.length} → ${keepRows.length} 行`);
-    sheet.getRange(4, 1, lastRow - 3, 2).clearContent();
+    console.log(`間引き [${sheet.getName()}]: ${values.length} → ${keepRows.length} 行`);
+    sheet.getRange(4, 1, sheet.getLastRow() - 3, 2).clearContent();
     sheet.getRange(4, 1, keepRows.length, 2).setValues(keepRows);
   }
 }
 
 // ==========================================
-// 6. 個別動画グラフの更新
+// 6. 個別動画グラフ
 // ==========================================
 /**
- * 各動画シートに再生数推移の折れ線グラフを作成・更新する。
+ * 各動画シートに再生数推移の折れ線グラフを作成または更新する。
  * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
  */
 function updateIndividualChart_(sheet) {
@@ -298,22 +298,22 @@ function updateIndividualChart_(sheet) {
 }
 
 // ==========================================
-// 7. 比較シートの作成・更新
+// 7. 比較シートの生成
 // ==========================================
 /**
- * 全動画の再生数推移を1シートに集約し、比較グラフを生成する。
+ * 全動画の再生数推移を1シートに集約し、比較グラフを2種類生成する。
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
  */
 function updateComparisonSheet_(ss) {
   SpreadsheetApp.flush();
-  Utilities.sleep(2000); // flush が反映されるまで待機
+  Utilities.sleep(2000);
 
   const compSheet   = ss.getSheetByName(CONFIG.COMP_SHEET_NAME) || ss.insertSheet(CONFIG.COMP_SHEET_NAME, 0);
   const videoSheets = ss.getSheets().filter(s => !CONFIG.PRESERVE_SHEET_NAMES.includes(s.getName()));
 
   const { dataMap, publishDateMap, sortedTimestamps } = aggregateVideoData_(videoSheets);
   if (sortedTimestamps.length === 0) {
-    console.warn('⚠️ 比較シートに書き込むデータがありません。');
+    console.warn('比較シートに書き込むデータがありません');
     return;
   }
 
@@ -330,9 +330,9 @@ function updateComparisonSheet_(ss) {
  * @returns {{ dataMap: object, publishDateMap: object, sortedTimestamps: string[] }}
  */
 function aggregateVideoData_(videoSheets) {
-  const dataMap         = {}; // { timestamp: { sheetName: viewCount } }
-  const publishDateMap  = {}; // { sheetName: Date }
-  const allTimestamps   = new Set();
+  const dataMap        = {}; // { timestamp: { sheetName: viewCount } }
+  const publishDateMap = {}; // { sheetName: Date }
+  const allTimestamps  = new Set();
 
   videoSheets.forEach(sh => {
     const name       = sh.getName();
@@ -342,7 +342,6 @@ function aggregateVideoData_(videoSheets) {
     const pubDate = new Date(pubDateVal);
     publishDateMap[name] = pubDate;
 
-    // 投稿時点(0回)を起点として追加
     const pubTs = formatTimestamp_(pubDate);
     allTimestamps.add(pubTs);
     setNestedValue_(dataMap, pubTs, name, 0);
@@ -367,6 +366,11 @@ function aggregateVideoData_(videoSheets) {
 
 /**
  * 比較シート用のテーブルデータ（2次元配列）を構築する。
+ * 動画行は最新再生数の降順でソートする。
+ * @param {GoogleAppsScript.Spreadsheet.Sheet[]} videoSheets
+ * @param {object}   dataMap
+ * @param {object}   publishDateMap
+ * @param {string[]} sortedTimestamps
  * @returns {any[][]}
  */
 function buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimestamps) {
@@ -374,22 +378,17 @@ function buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimes
 
   const videoRows = videoSheets
     .map(sh => {
-      const name        = sh.getName();
-      const pubDate     = publishDateMap[name];
+      const name    = sh.getName();
+      const pubDate = publishDateMap[name];
       if (!pubDate) return null;
 
-      // 各タイムスタンプの値（null = データなし）
-      const values = sortedTimestamps.map(ts => dataMap[ts]?.[name] ?? null);
-
-      // 最新再生数（nullを除いた最後の値）
+      const values  = sortedTimestamps.map(ts => dataMap[ts]?.[name] ?? null);
       const lastVal = [...values].reverse().find(v => v !== null) ?? 0;
 
-      // 1日平均
-      const diffDays  = Math.max(1, (now.getTime() - pubDate.getTime()) / MS_PER_DAY);
-      const dailyAvg  = Math.round(lastVal / diffDays);
+      const diffDays = Math.max(1, (now.getTime() - pubDate.getTime()) / MS_PER_DAY);
+      const dailyAvg = Math.round(lastVal / diffDays);
 
-      // A1を参照式で動画タイトルを取得（シート名のシングルクォートをエスケープ）
-      const escapedName = name.replace(/'/g, "''");
+      const escapedName  = name.replace(/'/g, "''");
       const titleFormula = `='${escapedName}'!$A$1`;
 
       return { row: [titleFormula, dailyAvg, ...values], lastVal };
@@ -402,74 +401,59 @@ function buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimes
 }
 
 /**
- * 比較シートにテーブルを書き込む。
- * データが 0 と空白しかない列（= まだ誰も再生数を持たないタイムスタンプ列）は非表示にする。
+ * 比較シートにテーブルを書き込み、空列を非表示にする。
  * @param {GoogleAppsScript.Spreadsheet.Sheet} compSheet
  * @param {any[][]} tableValues
  */
 function renderComparisonSheet_(compSheet, tableValues) {
-  // 既存グラフを削除してシートをクリア
   compSheet.getCharts().forEach(c => compSheet.removeChart(c));
   compSheet.clear();
 
   const rows = tableValues.length;
   const cols = tableValues[0].length;
 
-  // 列が足りなければ追加
   if (compSheet.getMaxColumns() < cols) {
     compSheet.insertColumnsAfter(compSheet.getMaxColumns(), cols - compSheet.getMaxColumns());
   }
 
-  // いったん全列を表示状態に戻す（前回の非表示をリセット）
+  // ヘルパー列も含めて全列を一旦表示に戻す（前回非表示にした列のリセット）
   compSheet.showColumns(1, compSheet.getMaxColumns());
 
   compSheet.getRange(1, 1, rows, cols).setValues(tableValues);
-  // ヘッダー行の日時列を書式設定
-  compSheet.getRange(1, 3, 1, cols - 2).setNumberFormat('yyyy/MM/dd');
-  // B列（1日平均）を強調
-  compSheet.getRange(1, 2, rows, 1).setBackground('#fff2cc').setFontWeight('bold');
-  // ヘッダー行を固定
+  compSheet.getRange(1, 3, 1, cols - 2).setNumberFormat('yyyy/MM/dd'); // ヘッダー日時列の表示形式
+  compSheet.getRange(1, 2, rows, 1).setBackground('#fff2cc').setFontWeight('bold'); // B列（1日平均）を強調
   compSheet.setFrozenRows(1);
 
-  // データ列（C列以降）のうち、全行が 0 または空白の列を非表示にする
   hideEmptyDataColumns_(compSheet, tableValues);
 }
 
 /**
- * C列以降（タイムスタンプ列）で、データ行がすべて 0 または null/空白の列を非表示にする。
- * A列（動画名）・B列（1日平均）は対象外。
+ * C 列以降（タイムスタンプ列）で全動画行が 0 または空の列を非表示にする。
+ * A・B 列は対象外。
  * @param {GoogleAppsScript.Spreadsheet.Sheet} compSheet
- * @param {any[][]} tableValues  書き込み済みのテーブルデータ（2次元配列）
+ * @param {any[][]} tableValues
  */
 function hideEmptyDataColumns_(compSheet, tableValues) {
-  const rows = tableValues.length;
-  const cols = tableValues[0].length;
-
-  // データ行のみ（ヘッダー行=index 0 を除く）でチェック
+  const cols     = tableValues[0].length;
   const dataRows = tableValues.slice(1);
+  let   hidden   = 0;
 
-  let hiddenCount = 0;
-
-  for (let colIndex = 2; colIndex < cols; colIndex++) { // 0-indexed: 2 = C列
+  for (let colIndex = 2; colIndex < cols; colIndex++) {
     const hasValue = dataRows.some(row => {
       const v = row[colIndex];
       return v !== null && v !== '' && v !== 0;
     });
-
     if (!hasValue) {
-      // hideColumns は 1-indexed
       compSheet.hideColumns(colIndex + 1);
-      hiddenCount++;
+      hidden++;
     }
   }
 
-  if (hiddenCount > 0) {
-    console.log(`👻 空列を非表示: ${hiddenCount} 列`);
-  }
+  if (hidden > 0) console.log(`空列を非表示: ${hidden} 列`);
 }
 
 /**
- * 比較シートに折れ線グラフを追加する。
+ * 比較シートに絶対日時を横軸とした折れ線グラフを追加する。
  * @param {GoogleAppsScript.Spreadsheet.Sheet} compSheet
  * @param {number} rows  テーブルの行数
  * @param {number} cols  テーブルの列数
@@ -477,11 +461,10 @@ function hideEmptyDataColumns_(compSheet, tableValues) {
 function buildComparisonChart_(compSheet, rows, cols) {
   const { WIDTH, HEIGHT } = CONFIG.CHART;
 
-  // A列（動画名）と C列以降（タイムスタンプ別データ）を使用。B列（平均）は除外
   const chart = compSheet.newChart()
     .asLineChart()
-    .addRange(compSheet.getRange(1, 1, rows, 1))   // 動画名
-    .addRange(compSheet.getRange(1, 3, rows, cols - 2)) // 再生数データ
+    .addRange(compSheet.getRange(1, 1, rows, 1))        // A列: 動画名
+    .addRange(compSheet.getRange(1, 3, rows, cols - 2)) // C列以降: 再生数データ
     .setTransposeRowsAndColumns(true)
     .setNumHeaders(1)
     .setPosition(rows + 2, 1, 0, 0)
@@ -507,7 +490,7 @@ function buildComparisonChart_(compSheet, rows, cols) {
     .build();
 
   compSheet.insertChart(chart);
-  console.log(`📊 グラフを生成しました（${WIDTH}×${HEIGHT}px）`);
+  console.log(`グラフを生成しました（${WIDTH}×${HEIGHT}px）`);
 }
 
 // ==========================================
@@ -515,41 +498,41 @@ function buildComparisonChart_(compSheet, rows, cols) {
 // ==========================================
 /**
  * 全動画の横軸を「投稿日からの経過日数」に正規化した折れ線グラフを生成する。
- * ヘルパーテーブルをメインテーブルの右端+5列目に書き込み、列を非表示にしてグラフのデータ源とする。
+ * ヘルパーテーブルをメインテーブル右端+5列目に書き込み非表示にしてグラフのデータ源とする。
  * @param {GoogleAppsScript.Spreadsheet.Sheet}   compSheet
  * @param {GoogleAppsScript.Spreadsheet.Sheet[]} videoSheets
  * @param {object} publishDateMap  { sheetName: Date }
- * @param {number} mainTableCols  メインテーブルの列数
- * @param {number} mainTableRows  メインテーブルの行数（グラフ位置の計算用）
+ * @param {number} mainTableCols   メインテーブルの列数（ヘルパーテーブルの配置基点）
+ * @param {number} mainTableRows   メインテーブルの行数（グラフ位置の計算基点）
  */
 function buildElapsedDaysChart_(compSheet, videoSheets, publishDateMap, mainTableCols, mainTableRows) {
   const validSheets = videoSheets.filter(sh => publishDateMap[sh.getName()]);
   if (validSheets.length === 0) return;
 
-  // ① 各動画のデータを「経過時間バケツ(h) → 再生数」にマップ
+  // 各動画のデータを「経過時間バケツ(h) → 再生数」にマップ
   const videoMaps = validSheets.map(sh => {
     const pubDate = publishDateMap[sh.getName()];
     const map     = new Map();
     map.set(0, 0); // 投稿日 = 起点 0 再生
+
     const lastRow = sh.getLastRow();
     if (lastRow >= 4) {
       sh.getRange(4, 1, lastRow - 3, 2).getValues().forEach(row => {
         if (!(row[0] instanceof Date)) return;
         const elapsedMs = row[0].getTime() - pubDate.getTime();
         if (elapsedMs < 0) return;
-        const key = getRoundedElapsedHours_(elapsedMs);
-        map.set(key, row[1]); // 同バケツは上書き（最新値）
+        map.set(getRoundedElapsedHours_(elapsedMs), row[1]); // 同バケツは最新値で上書き
       });
     }
     return map;
   });
 
-  // ② 全バケツの和集合（ソート済み）
+  // 全バケツの和集合（ソート済み）
   const allHoursSet = new Set();
   videoMaps.forEach(map => map.forEach((_, h) => allHoursSet.add(h)));
   const sortedHours = [...allHoursSet].sort((a, b) => a - b);
 
-  // ③ テーブル構築
+  // テーブル構築（ヘッダー行 + データ行）
   const titleRow = ['経過日数', ...validSheets.map(sh => sh.getRange('A1').getValue() || sh.getName())];
   const dataRows = sortedHours.map(h => [
     Math.round(h / 24 * 100) / 100, // 経過日数（小数第2位まで）
@@ -557,7 +540,7 @@ function buildElapsedDaysChart_(compSheet, videoSheets, publishDateMap, mainTabl
   ]);
   const tableData = [titleRow, ...dataRows];
 
-  // ④ メインテーブル右端+5列目にヘルパーテーブルを書き込む
+  // ヘルパーテーブルをメインテーブル右端+5列目に書き込む
   const startCol = mainTableCols + 5;
   const numRows  = tableData.length;
   const numCols  = tableData[0].length;
@@ -565,9 +548,9 @@ function buildElapsedDaysChart_(compSheet, videoSheets, publishDateMap, mainTabl
     compSheet.insertColumnsAfter(compSheet.getMaxColumns(), startCol + numCols - 1 - compSheet.getMaxColumns());
   }
   compSheet.getRange(1, startCol, numRows, numCols).setValues(tableData);
-  compSheet.hideColumns(startCol, numCols); // ユーザーに見せない
+  compSheet.hideColumns(startCol, numCols);
 
-  // ⑤ グラフ作成（既存の1枚目グラフの下に配置）
+  // グラフ作成（1枚目グラフの下に配置）
   const { WIDTH, HEIGHT } = CONFIG.CHART;
   const chartRow = mainTableRows + 2 + Math.ceil(HEIGHT / 21) + 5;
 
@@ -598,7 +581,7 @@ function buildElapsedDaysChart_(compSheet, videoSheets, publishDateMap, mainTabl
     .build();
 
   compSheet.insertChart(chart);
-  console.log(`📊 経過日数グラフを生成しました`);
+  console.log('経過日数グラフを生成しました');
 }
 
 /**
@@ -642,7 +625,16 @@ function setNestedValue_(obj, key1, key2, value) {
 // ==========================================
 /**
  * 投稿日(0再生)と最初の計測値の間を、べき乗則曲線で補完する。
- * 2回目の計測が揃った時点で1度だけ実行し、ScriptProperties で管理する。
+ *
+ * alpha の推定には最初の 1〜3 計測点を log-log 空間で重み付き最小二乗法により求める。
+ * 重み [1, 2, 4] は後の計測点ほど大きく設定し、最新の勾配に合わせる。
+ * 計測点が 1 点のみの場合は平方根曲線（alpha = 0.5）にフォールバックする。
+ *
+ * SAMPLING.RULES と同じ頻度の補完点を挿入するため、
+ * 補完後に間引きの対象外となり自然に保持される。
+ *
+ * ScriptProperties でシートごとに実行済みフラグを管理し、一度だけ実行する。
+ *
  * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
  * @param {Date} publishedAt
  */
@@ -650,50 +642,52 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
   const propKey = `curve_filled_${sheet.getName()}`;
   if (PropertiesService.getScriptProperties().getProperty(propKey)) return;
 
-  const lastRow   = sheet.getLastRow();
-  const dataCount = lastRow - 3;
-  if (dataCount < 2) return; // [pub,0] と最低1件の計測が必要
+  const dataCount = sheet.getLastRow() - 3;
+  if (dataCount < 2) return; // 起点行 + 最低1計測が必要
 
-  const t0 = publishedAt;
-  const row1 = sheet.getRange(5, 1, 1, 2).getValues()[0];
-  const [t1, v1] = [row1[0], row1[1]];
+  const t0 = publishedAt.getTime();
 
-  if (!(t1 instanceof Date) || v1 <= 0) return;
+  // 起点行(row4)直後の最大3計測点を読み込む（row5〜row7）
+  const nSamples = Math.min(dataCount - 1, 3);
+  const rawRows  = sheet.getRange(5, 1, nSamples, 2).getValues();
 
-  const d1 = t1.getTime() - t0.getTime();
-  if (d1 <= 0) return;
+  const points = rawRows
+    .filter(r => r[0] instanceof Date && r[1] > 0)
+    .map(r => ({ d: r[0].getTime() - t0, v: r[1] }))
+    .filter(p => p.d > 0);
 
-  // デフォルトは平方根曲線（後から追跡開始した動画向けフォールバック）
-  let alpha = 0.5;
+  if (points.length === 0) return;
 
-  // 2件目の計測が十分に時間が離れていればべき乗則でフィット
-  if (dataCount >= 3) {
-    const row2 = sheet.getRange(6, 1, 1, 2).getValues()[0];
-    const [t2, v2] = [row2[0], row2[1]];
-    const d2 = t2 instanceof Date ? t2.getTime() - t0.getTime() : 0;
+  // log-log 空間での重み付き最小二乗法で alpha を推定
+  // Y = log(v) = log(C) + alpha * log(d) = log(C) + alpha * X
+  let alpha = 0.5; // フォールバック: 平方根曲線
+  if (points.length >= 2) {
+    const ws = points.map((_, i) => Math.pow(2, i)); // [1, 2, 4]: 後の点ほど重く
+    const xs = points.map(p => Math.log(p.d));
+    const ys = points.map(p => Math.log(p.v));
 
-    if (v2 > v1 && d2 > d1 * 1.01) {
-      const rawAlpha = Math.log(v2 / v1) / Math.log(d2 / d1);
-      if (rawAlpha > 0 && rawAlpha <= 2) {
-        alpha = rawAlpha * 0.5;
-      }
-    }
+    const W    = ws.reduce((s, w)    => s + w, 0);
+    const xBar = ws.reduce((s, w, i) => s + w * xs[i], 0) / W;
+    const yBar = ws.reduce((s, w, i) => s + w * ys[i], 0) / W;
+    const num  = ws.reduce((s, w, i) => s + w * (xs[i] - xBar) * (ys[i] - yBar), 0);
+    const den  = ws.reduce((s, w, i) => s + w * Math.pow(xs[i] - xBar, 2), 0);
+
+    if (den > 0) alpha = Math.max(0.1, Math.min(1.5, num / den));
   }
 
+  const { d: d1, v: v1 } = points[0];
   const C = v1 / Math.pow(d1, alpha);
 
   // SAMPLING.RULES と同じ頻度で補完点を生成する
-  // keepEveryHours: null（30日以内）はトリガー間隔の 1 時間として扱う
   const newRows = [];
-  let curMs = t0.getTime();
+  let curMs = t0;
   while (true) {
-    const ageDays = (curMs - t0.getTime()) / MS_PER_DAY;
-    const rule     = CONFIG.SAMPLING.RULES.find(r => ageDays <= r.maxDays);
-    const stepMs   = (rule && rule.keepEveryHours ? rule.keepEveryHours : 1) * MS_PER_HOUR;
+    const ageDays = (curMs - t0) / MS_PER_DAY;
+    const rule    = CONFIG.SAMPLING.RULES.find(r => ageDays <= r.maxDays);
+    const stepMs  = (rule && rule.keepEveryHours ? rule.keepEveryHours : 1) * MS_PER_HOUR;
     curMs += stepMs;
-    if (curMs >= t1.getTime()) break;
-    const d = curMs - t0.getTime();
-    const v = Math.round(C * Math.pow(d, alpha));
+    if (curMs >= t0 + d1) break;
+    const v = Math.round(C * Math.pow(curMs - t0, alpha));
     if (v <= 0) continue;
     newRows.push([new Date(curMs), v]);
   }
@@ -701,9 +695,8 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
 
   sheet.insertRowsAfter(4, newRows.length);
   sheet.getRange(5, 1, newRows.length, 2).setValues(newRows);
-
   PropertiesService.getScriptProperties().setProperty(propKey, 'true');
-  console.log(`📈 初期成長曲線を補完 [${sheet.getName()}]: ${newRows.length} 点追加 (alpha=${alpha.toFixed(2)})`);
+  console.log(`成長曲線を補完 [${sheet.getName()}]: ${newRows.length} 点追加 (alpha=${alpha.toFixed(2)})`);
 }
 
 // ==========================================
@@ -711,6 +704,7 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
 // ==========================================
 /**
  * 動画シートをすべて削除してリセットする（PRESERVE_SHEET_NAMES は保持）。
+ * 同時に成長曲線補完の実行済みフラグも削除する。
  * ⚠️ データが失われるため慎重に使用すること。
  */
 function resetSheets() {
@@ -722,7 +716,7 @@ function resetSheets() {
       props.deleteProperty(`curve_filled_${sh.getName()}`);
       ss.deleteSheet(sh);
     });
-  console.log('🧹 動画シートをリセットしました。');
+  console.log('動画シートをリセットしました');
 }
 
 /**
@@ -730,7 +724,7 @@ function resetSheets() {
  * グラフやレイアウトを修正したい場合に使用する。
  */
 function rebuildComparisonSheet() {
-  console.log('🔄 比較シートを再構築します...');
+  console.log('比較シートを再構築します...');
   updateComparisonSheet_(SpreadsheetApp.getActiveSpreadsheet());
-  console.log('✅ 完了。');
+  console.log('完了。');
 }
