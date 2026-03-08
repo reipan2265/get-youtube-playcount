@@ -20,38 +20,22 @@ const CONFIG = {
     HEIGHT:  850,
   },
 
-  // fillInitialGrowthCurve_() が使用する実績マイルストーンデータ。
-  // 1動画につき複数エントリー可。alpha 推定の重み付き回帰に高重みで追加される。
+  // calibrateChannelAlpha() が使用するキャリブレーション参照データ。
+  // 各動画に個別に適用されるものではなく、チャンネル全体のデフォルト alpha を
+  // 統計的に推定するための入力データとして使う。
   // date: 達成日（YYYY-MM-DD）、viewCount: その時点の再生数
   MILESTONES: [
-    // カウントダウンラブ
-    { sheetNameContains: 'カウントダウンラブ', date: '2024-10-22', viewCount:   50000 },
-    { sheetNameContains: 'カウントダウンラブ', date: '2024-10-25', viewCount:  100000 },
-    { sheetNameContains: 'カウントダウンラブ', date: '2024-11-02', viewCount:  300000 },
-    { sheetNameContains: 'カウントダウンラブ', date: '2024-11-13', viewCount:  500000 },
-    { sheetNameContains: 'カウントダウンラブ', date: '2025-01-25', viewCount: 1000000 },
-    // KAWAII
-    { sheetNameContains: 'KAWAII', date: '2024-10-21', viewCount:   50000 },
-    { sheetNameContains: 'KAWAII', date: '2024-10-25', viewCount:  100000 },
-    { sheetNameContains: 'KAWAII', date: '2024-11-02', viewCount:  300000 },
-    { sheetNameContains: 'KAWAII', date: '2024-11-10', viewCount:  500000 },
-    // Karma
-    { sheetNameContains: 'Karma', date: '2024-11-15', viewCount:   50000 },
-    { sheetNameContains: 'Karma', date: '2024-11-20', viewCount:  100000 },
-    { sheetNameContains: 'Karma', date: '2024-12-23', viewCount:  300000 },
-    // SUPER DUPER
-    { sheetNameContains: 'SUPER DUPER', date: '2025-01-28', viewCount:   50000 },
-    { sheetNameContains: 'SUPER DUPER', date: '2025-02-10', viewCount:  100000 },
-    { sheetNameContains: 'SUPER DUPER', date: '2025-03-05', viewCount:  300000 },
-    // ファイヴァーズ
-    { sheetNameContains: 'ファイヴァーズ', date: '2025-02-08', viewCount:   50000 },
-    { sheetNameContains: 'ファイヴァーズ', date: '2025-02-15', viewCount:  100000 },
-    // 虹の行方
-    { sheetNameContains: '虹の行方', date: '2024-12-25', viewCount:   50000 },
-    { sheetNameContains: '虹の行方', date: '2024-12-29', viewCount:  100000 },
-    // Naraku
-    { sheetNameContains: 'Naraku', date: '2024-12-08', viewCount:   50000 },
-    { sheetNameContains: 'Naraku', date: '2024-12-13', viewCount:  100000 },
+    { sheetNameContains: 'カウントダウンラブ',    date: '2025-11-25', viewCount: 1000000 },
+    { sheetNameContains: 'KAWAII',               date: '2026-02-14', viewCount:  500000 },
+    { sheetNameContains: 'Karma',                date: '2026-01-15', viewCount:  300000 }, // 公開1ヶ月後（概算）
+    { sheetNameContains: 'SUPER DUPER',          date: '2026-02-15', viewCount:  300000 },
+    { sheetNameContains: 'ファイヴァーズ',         date: '2025-12-25', viewCount:  100000 },
+    { sheetNameContains: 'ボーダーレス',           date: '2026-01-15', viewCount:  100000 },
+    { sheetNameContains: '虹の行方',              date: '2025-11-25', viewCount:  100000 },
+    { sheetNameContains: 'Naraku',               date: '2026-01-05', viewCount:  100000 },
+    { sheetNameContains: 'BEAST MODE',           date: '2026-02-05', viewCount:  100000 },
+    { sheetNameContains: 'Ring Ring',            date: '2026-02-15', viewCount:  100000 },
+    { sheetNameContains: 'Oh Yeah',              date: '2026-03-08', viewCount:   50000 },
   ],
 
   // データ間引き設定
@@ -728,14 +712,14 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
   // 計測点に重みを付与（後の点ほど重く: [1, 2, 4]）
   const allPoints = points.map((p, i) => ({ ...p, w: Math.pow(2, i) }));
 
-  // CONFIG.MILESTONES にマッチする全マイルストーンを高重みで追加
-  const milestones = CONFIG.MILESTONES.filter(m => sheet.getName().includes(m.sheetNameContains));
-  milestones.forEach(m => {
-    const mMs = new Date(m.date).getTime() - t0;
-    if (mMs > 0 && m.viewCount > 0) {
-      allPoints.push({ d: mMs, v: m.viewCount, w: 8 }); // 重み 8 = 計測点より優先
+  // CONFIG.MILESTONES にマッチするマイルストーンがあれば高重みで追加
+  const milestone = CONFIG.MILESTONES.find(m => sheet.getName().includes(m.sheetNameContains));
+  if (milestone) {
+    const mMs = new Date(milestone.date).getTime() - t0;
+    if (mMs > 0 && milestone.viewCount > 0) {
+      allPoints.push({ d: mMs, v: milestone.viewCount, w: 8 }); // 重み 8 = 計測点より優先
     }
-  });
+  }
 
   // log-log 空間での重み付き最小二乗法で alpha を推定
   // Y = log(v) = log(C) + alpha * log(d)
@@ -775,7 +759,7 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
   sheet.insertRowsAfter(4, newRows.length);
   sheet.getRange(5, 1, newRows.length, 2).setValues(newRows);
   PropertiesService.getScriptProperties().setProperty(propKey, 'true');
-  const msNote = milestones.length > 0 ? ` milestones=${milestones.length}` : '';
+  const msNote = milestone ? ` milestone=${milestone.sheetNameContains}` : '';
   console.log(`成長曲線を補完 [${sheet.getName()}]: ${newRows.length} 点追加 (alpha=${alpha.toFixed(2)}${msNote})`);
 }
 
