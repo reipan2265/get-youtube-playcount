@@ -93,6 +93,7 @@ function processVideo_(ss, id, index, total, now) {
     fillInitialGrowthCurve_(sheet, publishedAt);
     runSampling_(sheet, publishedAt);
     updateIndividualChart_(sheet);
+    sortVideoSheetDescending_(sheet);
 
   } catch (e) {
     console.error(`[${index + 1}/${total}] エラー (id: ${id}): ${e.message}\n${e.stack}`);
@@ -216,6 +217,17 @@ function getOrCreateVideoSheet_(ss, sheetName, fullTitle, publishedAt) {
   sheet.appendRow([publishedAt, 0]); // 投稿日時点の起点レコード（再生数 = 0）
 
   return sheet;
+}
+
+/**
+ * 動画シートのデータ行（row4以降）をタイムスタンプ降順に並び替える。
+ * 最新データが常に行4（先頭）になる。
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ */
+function sortVideoSheetDescending_(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 4) return;
+  sheet.getRange(4, 1, lastRow - 3, 2).sort({ column: 1, ascending: false });
 }
 
 // ==========================================
@@ -360,7 +372,7 @@ function aggregateVideoData_(videoSheets) {
   return {
     dataMap,
     publishDateMap,
-    sortedTimestamps: [...allTimestamps].sort(),
+    sortedTimestamps: [...allTimestamps].sort().reverse(), // 最新が左になるよう降順
   };
 }
 
