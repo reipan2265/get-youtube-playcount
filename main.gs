@@ -398,10 +398,28 @@ function buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimes
       if (!pubDate) return null;
 
       const values  = sortedTimestamps.map(ts => dataMap[ts]?.[name] ?? null);
-      const lastVal = [...values].reverse().find(v => v !== null) ?? 0;
+      // sortedTimestamps は降順なので先頭が最新値（reverseは不要）
+      const lastVal = values.find(v => v !== null) ?? 0;
 
-      const diffDays = Math.max(1, (now.getTime() - pubDate.getTime()) / MS_PER_DAY);
-      const dailyAvg = Math.round(lastVal / diffDays);
+      // 投稿後30日以内の最後のデータ点を基準に1日平均を算出
+      // 30日未満の動画はその経過日数で割る
+      const FIRST_MONTH_DAYS = 30;
+      const targetMs         = pubDate.getTime() + FIRST_MONTH_DAYS * MS_PER_DAY;
+      const daysSincePublish = (now.getTime() - pubDate.getTime()) / MS_PER_DAY;
+
+      let baseViews, baseDays;
+      if (daysSincePublish >= FIRST_MONTH_DAYS) {
+        // 30日時点以前で最も新しいデータ点を探す（降順リストの先頭から見て targetMs 以下の最初の値）
+        const ts30 = sortedTimestamps.find(ts =>
+          dataMap[ts]?.[name] != null && new Date(ts).getTime() <= targetMs
+        );
+        baseViews = ts30 ? dataMap[ts30][name] : lastVal;
+        baseDays  = FIRST_MONTH_DAYS;
+      } else {
+        baseViews = lastVal;
+        baseDays  = Math.max(1, daysSincePublish);
+      }
+      const dailyAvg = Math.round(baseViews / baseDays);
 
       const escapedName  = name.replace(/'/g, "''");
       const titleFormula = `='${escapedName}'!$A$1`;
