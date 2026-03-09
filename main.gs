@@ -298,7 +298,7 @@ function updateIndividualChart_(sheet) {
     .asLineChart()
     .clearRanges()
     .addRange(dataRange)
-    .setPosition(1, 7, 0, 0)
+    .setPosition(1, 9, 0, 0)
     .setOption('title', title)
     .setOption('legend', { position: 'none' })
     .setOption('hAxis', { slantedText: true, slantedTextAngle: 45 })
@@ -671,27 +671,51 @@ function updateGrowthSummary_(sheet, currentViewCount, now) {
   const allData = sheet.getRange(4, 1, lastRow - 3, 2).getValues(); // 降順
   const nowMs   = now.getTime();
 
+  // fromMs前〜toMs前の増加量を返す。toMs=0 は現在値を使用
+  function calcIncrease(fromMs, toMs) {
+    const endVal   = toMs === 0
+      ? currentViewCount
+      : (allData.find(r => r[0] instanceof Date && r[0].getTime() <= nowMs - toMs)?.[1] ?? null);
+    const startVal = allData.find(r => r[0] instanceof Date && r[0].getTime() <= nowMs - fromMs)?.[1] ?? null;
+    return endVal != null && startVal != null ? endVal - startVal : '---';
+  }
+
+  // windows: [[fromMs, toMs], ...]  最大3ウィンドウ
   const PERIODS = [
-    { label: '1時間', ms:           MS_PER_HOUR },
-    { label: '1日',   ms:      MS_PER_DAY       },
-    { label: '1週間', ms:  7 * MS_PER_DAY       },
-    { label: '1ヶ月', ms: 30 * MS_PER_DAY       },
+    { label: '1時間', windows: [
+      [          MS_PER_HOUR,           0 ],
+    ]},
+    { label: '1日',   windows: [
+      [      MS_PER_DAY,           0 ],
+      [  2 * MS_PER_DAY,   MS_PER_DAY ],
+    ]},
+    { label: '1週間', windows: [
+      [  7 * MS_PER_DAY,           0 ],
+      [ 14 * MS_PER_DAY,  7 * MS_PER_DAY ],
+      [ 21 * MS_PER_DAY, 14 * MS_PER_DAY ],
+    ]},
+    { label: '1ヶ月', windows: [
+      [ 30 * MS_PER_DAY,           0 ],
+    ]},
   ];
 
+  const maxCols  = 3; // 最大ウィンドウ数
+  const headers  = ['期間', '直近', '前の期間', '更に前の期間'];
   const tableData = [
-    ['期間', '増加数'],
-    ...PERIODS.map(({ label, ms }) => {
-      const targetMs = nowMs - ms;
-      const found = allData.find(r => r[0] instanceof Date && r[0].getTime() <= targetMs);
-      return [label, found != null ? currentViewCount - found[1] : '---'];
+    headers,
+    ...PERIODS.map(({ label, windows }) => {
+      const vals = windows.map(([from, to]) => calcIncrease(from, to));
+      while (vals.length < maxCols) vals.push('---');
+      return [label, ...vals];
     }),
   ];
 
   const numRows  = tableData.length;
+  const numCols  = headers.length;
   const startRow = 4; // 固定行(1〜3)の下から開始
-  sheet.getRange(startRow, 4, numRows, 2).setValues(tableData);
-  sheet.getRange(startRow, 4, 1, 2).setBackground('#eeeeee').setFontWeight('bold');
-  sheet.getRange(startRow + 1, 5, numRows - 1, 1).setNumberFormat('#,##0');
+  sheet.getRange(startRow, 4, numRows, numCols).setValues(tableData);
+  sheet.getRange(startRow, 4, 1, numCols).setBackground('#eeeeee').setFontWeight('bold');
+  sheet.getRange(startRow + 1, 5, numRows - 1, numCols - 1).setNumberFormat('#,##0');
 }
 
 // ==========================================
