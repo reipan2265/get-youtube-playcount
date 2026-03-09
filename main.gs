@@ -671,21 +671,34 @@ function updateGrowthSummary_(sheet, currentViewCount, now) {
   const allData = sheet.getRange(4, 1, lastRow - 3, 2).getValues(); // 降順
   const nowMs   = now.getTime();
 
-  // targetMs 付近（±tolerance 以内）のデータ値を返す。なければ null
-  function findVal(targetMs, tolerance) {
+  // targetMs 以前で最も近いデータ点を {v, t} で返す
+  function findNearest(targetMs) {
     const row = allData.find(r => r[0] instanceof Date && r[0].getTime() <= targetMs);
-    if (!row || row[0].getTime() < targetMs - tolerance) return null;
-    return row[1];
+    return row ? { v: row[1], t: row[0].getTime() } : null;
   }
 
   // fromMs前〜toMs前の増加量を返す。toMs=0 は現在値を使用。
-  // 許容誤差は期間幅と同じ（データが粗くて期間内に点がない場合は ---）
+  // 正確なデータがない場合は隣接点から線形補間し ~ プレフィックスで推定値を返す。
+  // 両端が同じデータ点になる場合（推定不能）は --- を返す。
   function calcIncrease(fromMs, toMs) {
-    const endVal   = toMs === 0
-      ? currentViewCount
-      : findVal(nowMs - toMs, fromMs);
-    const startVal = findVal(nowMs - fromMs, fromMs);
-    return endVal != null && startVal != null ? endVal - startVal : '---';
+    const windowMs = fromMs - toMs;
+
+    const endPt   = toMs === 0
+      ? { v: currentViewCount, t: nowMs }
+      : findNearest(nowMs - toMs);
+    const startPt = findNearest(nowMs - fromMs);
+
+    if (!endPt || !startPt) return '---';
+
+    const actualSpanMs = endPt.t - startPt.t;
+    if (actualSpanMs <= 0) return '---'; // 同一点なので推定不能
+
+    const value = Math.round((endPt.v - startPt.v) / actualSpanMs * windowMs);
+
+    // 両端のデータ点が期間幅(fromMs)以内の誤差なら正確値、それ以外は推定値
+    const startErr = Math.abs(startPt.t - (nowMs - fromMs));
+    const endErr   = toMs === 0 ? 0 : Math.abs(endPt.t - (nowMs - toMs));
+    return startErr <= fromMs && endErr <= fromMs ? value : `~${value}`;
   }
 
   // windows: [[fromMs, toMs], ...]  各3ウィンドウ
