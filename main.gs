@@ -97,7 +97,10 @@ function processVideo_(ss, id, index, total, now) {
     runSampling_(sheet, publishedAt);
     updateIndividualChart_(sheet);
     sortVideoSheetDescending_(sheet);
-    updateGrowthSummary_(sheet, viewCount, now);
+    // ソート後のデータを1回読んで渡す（updateGrowthSummary_ 内の重複読み込みを省く）
+    const lastRow_ = sheet.getLastRow();
+    const allData_ = lastRow_ >= 4 ? sheet.getRange(4, 1, lastRow_ - 3, 2).getValues() : [];
+    updateGrowthSummary_(sheet, viewCount, now, allData_);
 
   } catch (e) {
     console.error(`[${index + 1}/${total}] エラー (id: ${id}): ${e.message}\n${e.stack}`);
@@ -327,7 +330,7 @@ function updateComparisonSheet_(ss) {
   const compSheet   = ss.getSheetByName(CONFIG.COMP_SHEET_NAME) || ss.insertSheet(CONFIG.COMP_SHEET_NAME, 0);
   const videoSheets = ss.getSheets().filter(s => !CONFIG.PRESERVE_SHEET_NAMES.includes(s.getName()));
 
-  const { dataMap, publishDateMap, sortedTimestamps } = aggregateVideoData_(videoSheets);
+  const { dataMap, publishDateMap, elapsedMaps, sortedTimestamps } = aggregateVideoData_(videoSheets);
   if (sortedTimestamps.length === 0) {
     console.warn('比較シートに書き込むデータがありません');
     return;
@@ -337,7 +340,7 @@ function updateComparisonSheet_(ss) {
 
   renderComparisonSheet_(compSheet, tableValues);
   buildComparisonChart_(compSheet, tableValues.length, tableValues[0].length);
-  buildElapsedDaysChart_(compSheet, videoSheets, publishDateMap, tableValues[0].length, tableValues.length);
+  buildElapsedDaysChart_(compSheet, videoSheets, publishDateMap, elapsedMaps, tableValues[0].length, tableValues.length);
 }
 
 /**
@@ -348,6 +351,7 @@ function updateComparisonSheet_(ss) {
 function aggregateVideoData_(videoSheets) {
   const dataMap        = {}; // { timestamp: { sheetName: viewCount } }
   const publishDateMap = {}; // { sheetName: Date }
+  const elapsedMaps    = {}; // { sheetName: Map<elapsedHours, viewCount> } （経過日数グラフ用）
   const allTimestamps  = new Set();
 
   videoSheets.forEach(sh => {
@@ -362,6 +366,10 @@ function aggregateVideoData_(videoSheets) {
     allTimestamps.add(pubTs);
     setNestedValue_(dataMap, pubTs, name, 0);
 
+    const elapsed = new Map();
+    elapsed.set(0, 0); // 投稿日 = 起点 0 再生
+    elapsedMaps[name] = elapsed;
+
     const lastRow = sh.getLastRow();
     if (lastRow < 4) return;
 
@@ -370,12 +378,19 @@ function aggregateVideoData_(videoSheets) {
       const ts = formatTimestamp_(row[0]);
       allTimestamps.add(ts);
       setNestedValue_(dataMap, ts, name, row[1]);
+
+      // 経過日数マップも同時に構築（buildElapsedDaysChart_ の重複読み込みを省く）
+      const elapsedMs = row[0].getTime() - pubDate.getTime();
+      if (elapsedMs >= 0) {
+        elapsed.set(getRoundedElapsedHours_(elapsedMs), row[1]);
+      }
     });
   });
 
   return {
     dataMap,
     publishDateMap,
+    elapsedMaps,
     sortedTimestamps: [...allTimestamps].sort().reverse(), // 最新が左になるよう降順
   };
 }
@@ -539,27 +554,12 @@ function buildComparisonChart_(compSheet, rows, cols) {
  * @param {number} mainTableCols   メインテーブルの列数（ヘルパーテーブルの配置基点）
  * @param {number} mainTableRows   メインテーブルの行数（グラフ位置の計算基点）
  */
-function buildElapsedDaysChart_(compSheet, videoSheets, publishDateMap, mainTableCols, mainTableRows) {
+function buildElapsedDaysChart_(compSheet, videoSheets, publishDateMap, elapsedMaps, mainTableCols, mainTableRows) {
   const validSheets = videoSheets.filter(sh => publishDateMap[sh.getName()]);
   if (validSheets.length === 0) return;
 
-  // 各動画のデータを「経過時間バケツ(h) → 再生数」にマップ
-  const videoMaps = validSheets.map(sh => {
-    const pubDate = publishDateMap[sh.getName()];
-    const map     = new Map();
-    map.set(0, 0); // 投稿日 = 起点 0 再生
-
-    const lastRow = sh.getLastRow();
-    if (lastRow >= 4) {
-      sh.getRange(4, 1, lastRow - 3, 2).getValues().forEach(row => {
-        if (!(row[0] instanceof Date)) return;
-        const elapsedMs = row[0].getTime() - pubDate.getTime();
-        if (elapsedMs < 0) return;
-        map.set(getRoundedElapsedHours_(elapsedMs), row[1]); // 同バケツは最新値で上書き
-      });
-    }
-    return map;
-  });
+  // aggregateVideoData_ で構築済みの経過日数マップを使用（シートの重複読み込みを省く）
+  const videoMaps = validSheets.map(sh => elapsedMaps[sh.getName()] || new Map());
 
   // 全バケツの和集合（ソート済み）
   const allHoursSet = new Set();
@@ -664,12 +664,10 @@ function setNestedValue_(obj, key1, key2, value) {
  * @param {number} currentViewCount  最新の再生数
  * @param {Date}   now               計測日時
  */
-function updateGrowthSummary_(sheet, currentViewCount, now) {
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 4) return;
+function updateGrowthSummary_(sheet, currentViewCount, now, allData) {
+  if (!allData || allData.length === 0) return;
 
-  const allData = sheet.getRange(4, 1, lastRow - 3, 2).getValues(); // 降順
-  const nowMs   = now.getTime();
+  const nowMs = now.getTime();
 
   // targetMs 以前で最も近いデータ点を {v, t} で返す
   function findNearest(targetMs) {
@@ -740,8 +738,14 @@ function updateGrowthSummary_(sheet, currentViewCount, now) {
   const numCols  = headers.length;
   const startRow = 4; // 固定行(1〜3)の下から開始
   sheet.getRange(startRow, 4, numRows, numCols).setValues(tableData);
-  sheet.getRange(startRow, 4, 1, numCols).setBackground('#eeeeee').setFontWeight('bold');
-  sheet.getRange(startRow + 1, 5, numRows - 1, numCols - 1).setNumberFormat('#,##0');
+
+  // 書式設定は初回のみ（以降はセルに保持される）
+  const fmtKey = `summary_fmt_${sheet.getName()}`;
+  if (!PropertiesService.getScriptProperties().getProperty(fmtKey)) {
+    sheet.getRange(startRow, 4, 1, numCols).setBackground('#eeeeee').setFontWeight('bold');
+    sheet.getRange(startRow + 1, 5, numRows - 1, numCols - 1).setNumberFormat('#,##0');
+    PropertiesService.getScriptProperties().setProperty(fmtKey, 'true');
+  }
 }
 
 // ==========================================
@@ -838,6 +842,7 @@ function resetSheets() {
     .filter(sh => !CONFIG.PRESERVE_SHEET_NAMES.includes(sh.getName()))
     .forEach(sh => {
       props.deleteProperty(`curve_filled_${sh.getName()}`);
+      props.deleteProperty(`summary_fmt_${sh.getName()}`);
       ss.deleteSheet(sh);
     });
   console.log('動画シートをリセットしました');
