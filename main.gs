@@ -298,7 +298,7 @@ function updateIndividualChart_(sheet) {
     .asLineChart()
     .clearRanges()
     .addRange(dataRange)
-    .setPosition(1, 9, 0, 0)
+    .setPosition(10, 4, 0, 0)
     .setOption('title', title)
     .setOption('legend', { position: 'none' })
     .setOption('hAxis', { slantedText: true, slantedTextAngle: 45 })
@@ -680,14 +680,17 @@ function updateGrowthSummary_(sheet, currentViewCount, now) {
     return endVal != null && startVal != null ? endVal - startVal : '---';
   }
 
-  // windows: [[fromMs, toMs], ...]  最大3ウィンドウ
+  // windows: [[fromMs, toMs], ...]  各3ウィンドウ
   const PERIODS = [
     { label: '1時間', windows: [
       [          MS_PER_HOUR,           0 ],
+      [  2 * MS_PER_HOUR,   MS_PER_HOUR ],
+      [  3 * MS_PER_HOUR, 2 * MS_PER_HOUR ],
     ]},
     { label: '1日',   windows: [
       [      MS_PER_DAY,           0 ],
       [  2 * MS_PER_DAY,   MS_PER_DAY ],
+      [  3 * MS_PER_DAY, 2 * MS_PER_DAY ],
     ]},
     { label: '1週間', windows: [
       [  7 * MS_PER_DAY,           0 ],
@@ -696,6 +699,8 @@ function updateGrowthSummary_(sheet, currentViewCount, now) {
     ]},
     { label: '1ヶ月', windows: [
       [ 30 * MS_PER_DAY,           0 ],
+      [ 60 * MS_PER_DAY, 30 * MS_PER_DAY ],
+      [ 90 * MS_PER_DAY, 60 * MS_PER_DAY ],
     ]},
   ];
 
