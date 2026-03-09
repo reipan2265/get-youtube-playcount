@@ -97,6 +97,7 @@ function processVideo_(ss, id, index, total, now) {
     runSampling_(sheet, publishedAt);
     updateIndividualChart_(sheet);
     sortVideoSheetDescending_(sheet);
+    updateGrowthSummary_(sheet, viewCount, now);
 
   } catch (e) {
     console.error(`[${index + 1}/${total}] エラー (id: ${id}): ${e.message}\n${e.stack}`);
@@ -297,7 +298,7 @@ function updateIndividualChart_(sheet) {
     .asLineChart()
     .clearRanges()
     .addRange(dataRange)
-    .setPosition(1, 4, 0, 0)
+    .setPosition(8, 4, 0, 0)
     .setOption('title', title)
     .setOption('legend', { position: 'none' })
     .setOption('hAxis', { slantedText: true, slantedTextAngle: 45 })
@@ -654,7 +655,46 @@ function setNestedValue_(obj, key1, key2, value) {
 }
 
 // ==========================================
-// 10. 初期成長曲線の補完
+// 10. 増加量サマリー
+// ==========================================
+/**
+ * 各動画シートの D1:E6 に直近の再生数増加量サマリーを書き込む。
+ * データは降順ソート済みを前提とする（sortVideoSheetDescending_ 後に呼ぶこと）。
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {number} currentViewCount  最新の再生数
+ * @param {Date}   now               計測日時
+ */
+function updateGrowthSummary_(sheet, currentViewCount, now) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 4) return;
+
+  const allData = sheet.getRange(4, 1, lastRow - 3, 2).getValues(); // 降順
+  const nowMs   = now.getTime();
+
+  const PERIODS = [
+    { label: '1時間', ms:           MS_PER_HOUR },
+    { label: '1日',   ms:      MS_PER_DAY       },
+    { label: '1週間', ms:  7 * MS_PER_DAY       },
+    { label: '1ヶ月', ms: 30 * MS_PER_DAY       },
+  ];
+
+  const tableData = [
+    ['期間', '増加数'],
+    ...PERIODS.map(({ label, ms }) => {
+      const targetMs = nowMs - ms;
+      const found = allData.find(r => r[0] instanceof Date && r[0].getTime() <= targetMs);
+      return [label, found != null ? currentViewCount - found[1] : '---'];
+    }),
+  ];
+
+  const numRows = tableData.length;
+  sheet.getRange(1, 4, numRows, 2).setValues(tableData);
+  sheet.getRange(1, 4, 1, 2).setBackground('#eeeeee').setFontWeight('bold');
+  sheet.getRange(2, 5, numRows - 1, 1).setNumberFormat('#,##0');
+}
+
+// ==========================================
+// 11. 初期成長曲線の補完
 // ==========================================
 /**
  * 投稿日(0再生)と最初の計測値の間を、べき乗則曲線で補完する。
@@ -733,7 +773,7 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
 }
 
 // ==========================================
-// 11. 管理用ユーティリティ（手動実行）
+// 12. 管理用ユーティリティ（手動実行）
 // ==========================================
 /**
  * 動画シートをすべて削除してリセットする（PRESERVE_SHEET_NAMES は保持）。
