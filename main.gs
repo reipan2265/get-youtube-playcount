@@ -298,7 +298,7 @@ function updateIndividualChart_(sheet) {
     .asLineChart()
     .clearRanges()
     .addRange(dataRange)
-    .setPosition(8, 4, 0, 0)
+    .setPosition(1, 7, 0, 0)
     .setOption('title', title)
     .setOption('legend', { position: 'none' })
     .setOption('hAxis', { slantedText: true, slantedTextAngle: 45 })
@@ -687,10 +687,11 @@ function updateGrowthSummary_(sheet, currentViewCount, now) {
     }),
   ];
 
-  const numRows = tableData.length;
-  sheet.getRange(1, 4, numRows, 2).setValues(tableData);
-  sheet.getRange(1, 4, 1, 2).setBackground('#eeeeee').setFontWeight('bold');
-  sheet.getRange(2, 5, numRows - 1, 1).setNumberFormat('#,##0');
+  const numRows  = tableData.length;
+  const startRow = 4; // 固定行(1〜3)の下から開始
+  sheet.getRange(startRow, 4, numRows, 2).setValues(tableData);
+  sheet.getRange(startRow, 4, 1, 2).setBackground('#eeeeee').setFontWeight('bold');
+  sheet.getRange(startRow + 1, 5, numRows - 1, 1).setNumberFormat('#,##0');
 }
 
 // ==========================================
