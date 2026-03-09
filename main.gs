@@ -671,12 +671,20 @@ function updateGrowthSummary_(sheet, currentViewCount, now) {
   const allData = sheet.getRange(4, 1, lastRow - 3, 2).getValues(); // 降順
   const nowMs   = now.getTime();
 
-  // fromMs前〜toMs前の増加量を返す。toMs=0 は現在値を使用
+  // targetMs 付近（±tolerance 以内）のデータ値を返す。なければ null
+  function findVal(targetMs, tolerance) {
+    const row = allData.find(r => r[0] instanceof Date && r[0].getTime() <= targetMs);
+    if (!row || row[0].getTime() < targetMs - tolerance) return null;
+    return row[1];
+  }
+
+  // fromMs前〜toMs前の増加量を返す。toMs=0 は現在値を使用。
+  // 許容誤差は期間幅と同じ（データが粗くて期間内に点がない場合は ---）
   function calcIncrease(fromMs, toMs) {
     const endVal   = toMs === 0
       ? currentViewCount
-      : (allData.find(r => r[0] instanceof Date && r[0].getTime() <= nowMs - toMs)?.[1] ?? null);
-    const startVal = allData.find(r => r[0] instanceof Date && r[0].getTime() <= nowMs - fromMs)?.[1] ?? null;
+      : findVal(nowMs - toMs, fromMs);
+    const startVal = findVal(nowMs - fromMs, fromMs);
     return endVal != null && startVal != null ? endVal - startVal : '---';
   }
 
