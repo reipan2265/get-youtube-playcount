@@ -336,11 +336,15 @@ function updateComparisonSheet_(ss) {
     return;
   }
 
-  const tableValues = buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimestamps);
+  const { tableValues, sortedNames } = buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimestamps);
 
   renderComparisonSheet_(compSheet, tableValues);
-  buildComparisonChart_(compSheet, tableValues.length, tableValues[0].length);
-  buildElapsedDaysChart_(compSheet, videoSheets, publishDateMap, elapsedMaps, tableValues[0].length, tableValues.length);
+
+  const absHelper = buildAbsoluteTimeHelperTable_(compSheet, sortedNames, dataMap, sortedTimestamps, 4);
+  buildComparisonChart_(compSheet, absHelper, tableValues.length);
+
+  const elapsedStartCol = absHelper.startCol + absHelper.numCols + 2;
+  buildElapsedDaysChart_(compSheet, videoSheets, publishDateMap, elapsedMaps, elapsedStartCol, tableValues.length);
 }
 
 /**
@@ -396,13 +400,13 @@ function aggregateVideoData_(videoSheets) {
 }
 
 /**
- * 比較シート用のテーブルデータ（2次元配列）を構築する。
+ * 比較シート用のテーブルデータ（2列: 動画名, 1日平均再生数）を構築する。
  * 動画行は最新再生数の降順でソートする。
  * @param {GoogleAppsScript.Spreadsheet.Sheet[]} videoSheets
  * @param {object}   dataMap
  * @param {object}   publishDateMap
  * @param {string[]} sortedTimestamps
- * @returns {any[][]}
+ * @returns {{ tableValues: any[][], sortedNames: string[] }}
  */
 function buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimestamps) {
   const now = new Date();
@@ -440,17 +444,20 @@ function buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimes
       const escapedName  = name.replace(/'/g, "''");
       const titleFormula = `='${escapedName}'!$A$1`;
 
-      return { row: [titleFormula, dailyAvg, ...values], lastVal };
+      return { row: [titleFormula, dailyAvg], lastVal, name };
     })
     .filter(Boolean)
     .sort((a, b) => b.lastVal - a.lastVal);
 
-  const headerRow = ['動画名', '1日平均再生数', ...sortedTimestamps.map(ts => new Date(ts))];
-  return [headerRow, ...videoRows.map(r => r.row)];
+  const headerRow = ['動画名', '1日平均再生数'];
+  return {
+    tableValues: [headerRow, ...videoRows.map(r => r.row)],
+    sortedNames: videoRows.map(r => r.name),
+  };
 }
 
 /**
- * 比較シートにテーブルを書き込み、空列を非表示にする。
+ * 比較シートにテーブル（2列: 動画名, 1日平均再生数）を書き込む。
  * @param {GoogleAppsScript.Spreadsheet.Sheet} compSheet
  * @param {any[][]} tableValues
  */
@@ -461,62 +468,63 @@ function renderComparisonSheet_(compSheet, tableValues) {
   const rows = tableValues.length;
   const cols = tableValues[0].length;
 
-  if (compSheet.getMaxColumns() < cols) {
-    compSheet.insertColumnsAfter(compSheet.getMaxColumns(), cols - compSheet.getMaxColumns());
-  }
-
   // ヘルパー列も含めて全列を一旦表示に戻す（前回非表示にした列のリセット）
   compSheet.showColumns(1, compSheet.getMaxColumns());
 
   compSheet.getRange(1, 1, rows, cols).setValues(tableValues);
-  compSheet.getRange(1, 3, 1, cols - 2).setNumberFormat('yyyy/MM/dd'); // ヘッダー日時列の表示形式
   compSheet.getRange(1, 2, rows, 1).setBackground('#fff2cc').setFontWeight('bold'); // B列（1日平均）を強調
   compSheet.setFrozenRows(1);
-
-  hideEmptyDataColumns_(compSheet, tableValues);
 }
 
 /**
- * C 列以降（タイムスタンプ列）で全動画行が 0 または空の列を非表示にする。
- * A・B 列は対象外。
+ * 比較シートの指定列以降に絶対日時ヘルパーテーブルを非表示で書き込む。
+ * グラフのデータ源として使用する。
  * @param {GoogleAppsScript.Spreadsheet.Sheet} compSheet
- * @param {any[][]} tableValues
+ * @param {string[]} sortedNames   動画名（ソート済み、凡例順一致用）
+ * @param {object}   dataMap       { timestamp: { sheetName: viewCount } }
+ * @param {string[]} sortedTimestamps  タイムスタンプ（降順）
+ * @param {number}   startCol      書き込み開始列
+ * @returns {{ startCol: number, numRows: number, numCols: number }}
  */
-function hideEmptyDataColumns_(compSheet, tableValues) {
-  const cols     = tableValues[0].length;
-  const dataRows = tableValues.slice(1);
-  let   hidden   = 0;
+function buildAbsoluteTimeHelperTable_(compSheet, sortedNames, dataMap, sortedTimestamps, startCol) {
+  // グラフ用に昇順にする
+  const ascTimestamps = [...sortedTimestamps].reverse();
 
-  for (let colIndex = 2; colIndex < cols; colIndex++) {
-    const hasValue = dataRows.some(row => {
-      const v = row[colIndex];
-      return v !== null && v !== '' && v !== 0;
-    });
-    if (!hasValue) {
-      compSheet.hideColumns(colIndex + 1);
-      hidden++;
-    }
+  const headerRow = ['日時', ...sortedNames];
+  const dataRows  = ascTimestamps.map(ts => [
+    new Date(ts),
+    ...sortedNames.map(name => dataMap[ts]?.[name] ?? null),
+  ]);
+  const tableData = [headerRow, ...dataRows];
+
+  const numRows = tableData.length;
+  const numCols = tableData[0].length;
+
+  if (compSheet.getMaxColumns() < startCol + numCols - 1) {
+    compSheet.insertColumnsAfter(compSheet.getMaxColumns(), startCol + numCols - 1 - compSheet.getMaxColumns());
   }
+  compSheet.getRange(1, startCol, numRows, numCols).setValues(tableData);
+  compSheet.hideColumns(startCol, numCols);
 
-  if (hidden > 0) console.log(`空列を非表示: ${hidden} 列`);
+  return { startCol, numRows, numCols };
 }
 
 /**
  * 比較シートに絶対日時を横軸とした折れ線グラフを追加する。
+ * ヘルパーテーブルのデータを参照する。
  * @param {GoogleAppsScript.Spreadsheet.Sheet} compSheet
- * @param {number} rows  テーブルの行数
- * @param {number} cols  テーブルの列数
+ * @param {{ startCol: number, numRows: number, numCols: number }} helperInfo
+ * @param {number} mainTableRows  メインテーブルの行数（グラフ位置の計算基点）
  */
-function buildComparisonChart_(compSheet, rows, cols) {
+function buildComparisonChart_(compSheet, helperInfo, mainTableRows) {
   const { WIDTH, HEIGHT } = CONFIG.CHART;
+  const { startCol, numRows, numCols } = helperInfo;
 
   const chart = compSheet.newChart()
     .asLineChart()
-    .addRange(compSheet.getRange(1, 1, rows, 1))        // A列: 動画名
-    .addRange(compSheet.getRange(1, 3, rows, cols - 2)) // C列以降: 再生数データ
-    .setTransposeRowsAndColumns(true)
+    .addRange(compSheet.getRange(1, startCol, numRows, numCols))
     .setNumHeaders(1)
-    .setPosition(rows + 2, 1, 0, 0)
+    .setPosition(mainTableRows + 2, 1, 0, 0)
     .setOption('title', '全動画 再生数推移')
     .setOption('width', WIDTH)
     .setOption('height', HEIGHT)
@@ -551,10 +559,10 @@ function buildComparisonChart_(compSheet, rows, cols) {
  * @param {GoogleAppsScript.Spreadsheet.Sheet}   compSheet
  * @param {GoogleAppsScript.Spreadsheet.Sheet[]} videoSheets
  * @param {object} publishDateMap  { sheetName: Date }
- * @param {number} mainTableCols   メインテーブルの列数（ヘルパーテーブルの配置基点）
+ * @param {number} startCol        ヘルパーテーブルの書き込み開始列
  * @param {number} mainTableRows   メインテーブルの行数（グラフ位置の計算基点）
  */
-function buildElapsedDaysChart_(compSheet, videoSheets, publishDateMap, elapsedMaps, mainTableCols, mainTableRows) {
+function buildElapsedDaysChart_(compSheet, videoSheets, publishDateMap, elapsedMaps, startCol, mainTableRows) {
   const validSheets = videoSheets.filter(sh => publishDateMap[sh.getName()]);
   if (validSheets.length === 0) return;
 
@@ -574,8 +582,6 @@ function buildElapsedDaysChart_(compSheet, videoSheets, publishDateMap, elapsedM
   ]);
   const tableData = [titleRow, ...dataRows];
 
-  // ヘルパーテーブルをメインテーブル右端+5列目に書き込む
-  const startCol = mainTableCols + 5;
   const numRows  = tableData.length;
   const numCols  = tableData[0].length;
   if (compSheet.getMaxColumns() < startCol + numCols - 1) {
