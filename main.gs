@@ -20,6 +20,9 @@ const CONFIG = {
     HEIGHT:  850,
   },
 
+  // 増加量サマリーの表示期間数（直近 + この数だけ前の期間を表示）
+  SUMMARY_WINDOWS: 5,
+
   // データ間引き設定
   // keepEveryHours: null = 全件保持（トリガー間隔ごとに1件 = 実質1時間ごと）
   //                 数値 = その間隔（時間）ごとに1件保持
@@ -808,20 +811,20 @@ function updateGrowthSummary_(sheet, currentViewCount, now, allData) {
   const makeWindows = (unit, count) =>
     Array.from({ length: count }, (_, i) => [(i + 1) * unit, i * unit]);
 
+  const N = CONFIG.SUMMARY_WINDOWS;
   const PERIODS = [
-    { label: '1時間', windows: makeWindows(MS_PER_HOUR,          3) },
-    { label: '1日',   windows: makeWindows(MS_PER_DAY,           7) },
-    { label: '1週間', windows: makeWindows(7  * MS_PER_DAY,      4) },
-    { label: '1ヶ月', windows: makeWindows(30 * MS_PER_DAY,     12) },
+    { label: '1時間', windows: makeWindows(MS_PER_HOUR,     N) },
+    { label: '1日',   windows: makeWindows(MS_PER_DAY,      N) },
+    { label: '1週間', windows: makeWindows(7  * MS_PER_DAY, N) },
+    { label: '1ヶ月', windows: makeWindows(30 * MS_PER_DAY, N) },
   ];
 
-  const maxCols   = Math.max(...PERIODS.map(p => p.windows.length)); // 12
-  const headers   = ['期間', '直近', ...Array.from({ length: maxCols - 1 }, (_, i) => `${i + 1}期前`)];
+  const headers = ['期間', '直近', ...Array.from({ length: N - 1 }, (_, i) => `${i + 1}期前`)];
   const tableData = [
     headers,
     ...PERIODS.map(({ label, windows }) => {
       const vals = windows.map(([from, to]) => calcIncrease(from, to));
-      while (vals.length < maxCols) vals.push('---');
+      while (vals.length < N) vals.push('---');
       return [label, ...vals];
     }),
   ];
