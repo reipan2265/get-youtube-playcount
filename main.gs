@@ -816,7 +816,8 @@ function updateGrowthSummary_(sheet, currentViewCount, now, allData) {
     { label: '1時間', windows: makeWindows(MS_PER_HOUR,     N) },
     { label: '1日',   windows: makeWindows(MS_PER_DAY,      N) },
     { label: '1週間', windows: makeWindows(7  * MS_PER_DAY, N) },
-    { label: '1ヶ月', windows: makeWindows(30 * MS_PER_DAY, N) },
+    { label: '1ヶ月', windows: makeWindows(30  * MS_PER_DAY, N) },
+    { label: '1年',   windows: makeWindows(365 * MS_PER_DAY, N) },
   ];
 
   const headers = ['期間', '直近', ...Array.from({ length: N - 1 }, (_, i) => `${i + 1}期前`)];
