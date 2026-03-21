@@ -804,32 +804,19 @@ function updateGrowthSummary_(sheet, currentViewCount, now, allData) {
     return result.isEstimate ? `~${result.value}` : result.value;
   }
 
-  // windows: [[fromMs, toMs], ...]  各3ウィンドウ
+  // 各期間ごとのウィンドウを生成: [[fromMs, toMs], ...]
+  const makeWindows = (unit, count) =>
+    Array.from({ length: count }, (_, i) => [(i + 1) * unit, i * unit]);
+
   const PERIODS = [
-    { label: '1時間', windows: [
-      [          MS_PER_HOUR,           0 ],
-      [  2 * MS_PER_HOUR,   MS_PER_HOUR ],
-      [  3 * MS_PER_HOUR, 2 * MS_PER_HOUR ],
-    ]},
-    { label: '1日',   windows: [
-      [      MS_PER_DAY,           0 ],
-      [  2 * MS_PER_DAY,   MS_PER_DAY ],
-      [  3 * MS_PER_DAY, 2 * MS_PER_DAY ],
-    ]},
-    { label: '1週間', windows: [
-      [  7 * MS_PER_DAY,           0 ],
-      [ 14 * MS_PER_DAY,  7 * MS_PER_DAY ],
-      [ 21 * MS_PER_DAY, 14 * MS_PER_DAY ],
-    ]},
-    { label: '1ヶ月', windows: [
-      [ 30 * MS_PER_DAY,           0 ],
-      [ 60 * MS_PER_DAY, 30 * MS_PER_DAY ],
-      [ 90 * MS_PER_DAY, 60 * MS_PER_DAY ],
-    ]},
+    { label: '1時間', windows: makeWindows(MS_PER_HOUR,          3) },
+    { label: '1日',   windows: makeWindows(MS_PER_DAY,           7) },
+    { label: '1週間', windows: makeWindows(7  * MS_PER_DAY,      4) },
+    { label: '1ヶ月', windows: makeWindows(30 * MS_PER_DAY,     12) },
   ];
 
-  const maxCols  = 3; // 最大ウィンドウ数
-  const headers  = ['期間', '直近', '前の期間', '更に前の期間'];
+  const maxCols   = Math.max(...PERIODS.map(p => p.windows.length)); // 12
+  const headers   = ['期間', '直近', ...Array.from({ length: maxCols - 1 }, (_, i) => `${i + 1}期前`)];
   const tableData = [
     headers,
     ...PERIODS.map(({ label, windows }) => {
@@ -844,8 +831,8 @@ function updateGrowthSummary_(sheet, currentViewCount, now, allData) {
   const startRow = 4; // 固定行(1〜3)の下から開始
   sheet.getRange(startRow, 4, numRows, numCols).setValues(tableData);
 
-  // 書式設定は初回のみ（以降はセルに保持される）
-  const fmtKey = `summary_fmt_${sheet.getName()}`;
+  // 書式設定（テーブルサイズ変更に対応するためバージョン管理）
+  const fmtKey = `summary_fmt_v2_${sheet.getName()}`;
   if (!PropertiesService.getScriptProperties().getProperty(fmtKey)) {
     sheet.getRange(startRow, 4, 1, numCols).setBackground('#eeeeee').setFontWeight('bold');
     sheet.getRange(startRow + 1, 5, numRows - 1, numCols - 1).setNumberFormat('#,##0');
