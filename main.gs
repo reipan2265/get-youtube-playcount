@@ -414,7 +414,8 @@ function aggregateVideoData_(videoSheets) {
  * @returns {{ tableValues: any[][], sortedNames: string[] }}
  */
 function buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimestamps) {
-  const now = new Date();
+  const now   = new Date();
+  const nowMs = now.getTime();
 
   const videoRows = videoSheets
     .map(sh => {
@@ -422,40 +423,39 @@ function buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimes
       const pubDate = publishDateMap[name];
       if (!pubDate) return null;
 
-      const values  = sortedTimestamps.map(ts => dataMap[ts]?.[name] ?? null);
-      // sortedTimestamps は降順なので先頭が最新値（reverseは不要）
-      const lastVal = values.find(v => v !== null) ?? 0;
+      // dataMap から降順の [Date, viewCount] 配列を再構築（シートの再読み込みを省く）
+      const allData = sortedTimestamps
+        .filter(ts => dataMap[ts]?.[name] != null)
+        .map(ts => [new Date(ts), dataMap[ts][name]]);
 
-      // 投稿後30日以内の最後のデータ点を基準に1日平均を算出
-      // 30日未満の動画はその経過日数で割る
-      const FIRST_MONTH_DAYS = 30;
-      const targetMs         = pubDate.getTime() + FIRST_MONTH_DAYS * MS_PER_DAY;
-      const daysSincePublish = (now.getTime() - pubDate.getTime()) / MS_PER_DAY;
+      const lastVal          = allData.length > 0 ? allData[0][1] : 0;
+      const daysSincePublish = Math.floor((nowMs - pubDate.getTime()) / MS_PER_DAY);
 
-      let baseViews, baseDays;
-      if (daysSincePublish >= FIRST_MONTH_DAYS) {
-        // 30日時点以前で最も新しいデータ点を探す（降順リストの先頭から見て targetMs 以下の最初の値）
-        const ts30 = sortedTimestamps.find(ts =>
-          dataMap[ts]?.[name] != null && new Date(ts).getTime() <= targetMs
-        );
-        baseViews = ts30 ? dataMap[ts30][name] : lastVal;
-        baseDays  = FIRST_MONTH_DAYS;
-      } else {
-        baseViews = lastVal;
-        baseDays  = Math.max(1, daysSincePublish);
-      }
-      const dailyAvg = Math.round(baseViews / baseDays);
+      const fmt = (fromMs) =>
+        formatIncreaseWithRate_(calcIncrease_(allData, lastVal, nowMs, fromMs, 0), lastVal);
 
       const fullTitle    = sh.getRange('A1').getValue() || name;
       const escapedName  = name.replace(/'/g, "''");
       const titleFormula = `='${escapedName}'!$A$1`;
 
-      return { row: [titleFormula, dailyAvg], lastVal, name, fullTitle };
+      return {
+        row: [
+          titleFormula,
+          lastVal,
+          daysSincePublish,
+          fmt(MS_PER_DAY),
+          fmt(7 * MS_PER_DAY),
+          fmt(30 * MS_PER_DAY),
+        ],
+        lastVal,
+        name,
+        fullTitle,
+      };
     })
     .filter(Boolean)
     .sort((a, b) => b.lastVal - a.lastVal);
 
-  const headerRow = ['動画名', '1日平均再生数'];
+  const headerRow = ['動画名', '最新再生数', '経過日数', '24h増加', '7日増加', '30日増加'];
   return {
     tableValues: [headerRow, ...videoRows.map(r => r.row)],
     sortedNames:  videoRows.map(r => r.name),
@@ -482,7 +482,12 @@ function renderComparisonSheet_(compSheet, tableValues) {
   }
 
   compSheet.getRange(1, 1, rows, cols).setValues(tableValues);
-  compSheet.getRange(1, 2, rows, 1).setBackground('#fff2cc').setFontWeight('bold'); // B列（1日平均）を強調
+  // ヘッダー行
+  compSheet.getRange(1, 1, 1, cols).setBackground('#eeeeee').setFontWeight('bold');
+  // B列（最新再生数）: 数値フォーマット + 太字
+  compSheet.getRange(2, 2, rows - 1, 1).setNumberFormat('#,###').setFontWeight('bold');
+  // C列（経過日数）: 整数フォーマット
+  compSheet.getRange(2, 3, rows - 1, 1).setNumberFormat('0');
   compSheet.setFrozenRows(1);
 }
 
@@ -712,6 +717,60 @@ function retryOnTimeout_(fn, maxRetries = 3) {
 }
 
 /**
+ * allData（降順ソート済み）から指定ウィンドウの増加量を計算する。
+ * @param {any[][]} allData          [[Date, viewCount], ...] 降順
+ * @param {number}  currentViewCount 最新再生数
+ * @param {number}  nowMs            現在時刻（ms）
+ * @param {number}  fromMs           ウィンドウ開始（nowMs から遡る ms）
+ * @param {number}  toMs             ウィンドウ終了（0 = 現在値を使用）
+ * @returns {{ value: number, isEstimate: boolean } | null}
+ */
+function calcIncrease_(allData, currentViewCount, nowMs, fromMs, toMs) {
+  const windowMs = fromMs - toMs;
+
+  function findNearest(targetMs) {
+    const row = allData.find(r => r[0] instanceof Date && r[0].getTime() <= targetMs);
+    return row ? { v: row[1], t: row[0].getTime() } : null;
+  }
+
+  const endPt   = toMs === 0
+    ? { v: currentViewCount, t: nowMs }
+    : findNearest(nowMs - toMs);
+  const startPt = findNearest(nowMs - fromMs);
+
+  if (!endPt || !startPt) return null;
+
+  const actualSpanMs = endPt.t - startPt.t;
+  if (actualSpanMs <= 0) return null;
+
+  const value = Math.round((endPt.v - startPt.v) / actualSpanMs * windowMs);
+
+  const startErr   = Math.abs(startPt.t - (nowMs - fromMs));
+  const endErr     = toMs === 0 ? 0 : Math.abs(endPt.t - (nowMs - toMs));
+  const isEstimate = !(startErr <= fromMs && endErr <= fromMs);
+
+  return { value, isEstimate };
+}
+
+/**
+ * calcIncrease_ の結果を "320 (0.6%)" 形式の文字列にフォーマットする。
+ * @param {{ value: number, isEstimate: boolean } | null} result
+ * @param {number} currentViewCount
+ * @returns {string}
+ */
+function formatIncreaseWithRate_(result, currentViewCount) {
+  if (!result) return '---';
+  const { value, isEstimate } = result;
+  const prefix = isEstimate ? '~' : '';
+  const base   = currentViewCount - value;
+  if (base > 0) {
+    const rate = (value / base * 100).toFixed(1);
+    return `${prefix}${value} (${rate}%)`;
+  }
+  return `${prefix}${value}`;
+}
+
+/**
  * ネストされたオブジェクトに安全に値をセットする。
  * @param {object} obj
  * @param {string} key1
@@ -738,34 +797,11 @@ function updateGrowthSummary_(sheet, currentViewCount, now, allData) {
 
   const nowMs = now.getTime();
 
-  // targetMs 以前で最も近いデータ点を {v, t} で返す
-  function findNearest(targetMs) {
-    const row = allData.find(r => r[0] instanceof Date && r[0].getTime() <= targetMs);
-    return row ? { v: row[1], t: row[0].getTime() } : null;
-  }
-
-  // fromMs前〜toMs前の増加量を返す。toMs=0 は現在値を使用。
-  // 正確なデータがない場合は隣接点から線形補間し ~ プレフィックスで推定値を返す。
-  // 両端が同じデータ点になる場合（推定不能）は --- を返す。
+  // calcIncrease_ のラッパー: 既存の文字列形式（数値 or '~数値' or '---'）で返す
   function calcIncrease(fromMs, toMs) {
-    const windowMs = fromMs - toMs;
-
-    const endPt   = toMs === 0
-      ? { v: currentViewCount, t: nowMs }
-      : findNearest(nowMs - toMs);
-    const startPt = findNearest(nowMs - fromMs);
-
-    if (!endPt || !startPt) return '---';
-
-    const actualSpanMs = endPt.t - startPt.t;
-    if (actualSpanMs <= 0) return '---'; // 同一点なので推定不能
-
-    const value = Math.round((endPt.v - startPt.v) / actualSpanMs * windowMs);
-
-    // 両端のデータ点が期間幅(fromMs)以内の誤差なら正確値、それ以外は推定値
-    const startErr = Math.abs(startPt.t - (nowMs - fromMs));
-    const endErr   = toMs === 0 ? 0 : Math.abs(endPt.t - (nowMs - toMs));
-    return startErr <= fromMs && endErr <= fromMs ? value : `~${value}`;
+    const result = calcIncrease_(allData, currentViewCount, nowMs, fromMs, toMs);
+    if (!result) return '---';
+    return result.isEstimate ? `~${result.value}` : result.value;
   }
 
   // windows: [[fromMs, toMs], ...]  各3ウィンドウ
