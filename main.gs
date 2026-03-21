@@ -97,6 +97,16 @@ function processVideo_(ss, id, index, total, now) {
     const sheetName = buildSheetName_(fullTitle, id);
     const sheet     = getOrCreateVideoSheet_(ss, sheetName, fullTitle, publishedAt);
 
+    // 同一タイムスタンプが既に存在する場合はスキップ（冪等性の担保）
+    const lastRow = sheet.getLastRow();
+    if (lastRow >= 4) {
+      const existing = sheet.getRange(4, 1, lastRow - 3, 1).getValues();
+      if (existing.some(r => r[0] instanceof Date && r[0].getTime() === now.getTime())) {
+        console.log(`[${index + 1}/${total}] ${sheetName}: スキップ（同一タイムスタンプ既存）`);
+        return;
+      }
+    }
+
     sheet.appendRow([now, viewCount]);
     console.log(`[${index + 1}/${total}] ${sheetName}: ${viewCount.toLocaleString()} 回`);
 
