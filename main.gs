@@ -340,12 +340,12 @@ function updateComparisonSheet_(ss) {
     return;
   }
 
-  const { tableValues, sortedNames } = buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimestamps);
+  const { tableValues, sortedNames, sortedTitles } = buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimestamps);
 
   renderComparisonSheet_(compSheet, tableValues);
 
   const absHelperSheet = getOrCreateHelperSheet_(ss, '_abs_helper');
-  const absHelper = buildAbsoluteTimeHelperTable_(absHelperSheet, sortedNames, dataMap, sortedTimestamps);
+  const absHelper = buildAbsoluteTimeHelperTable_(absHelperSheet, sortedNames, sortedTitles, dataMap, sortedTimestamps);
   buildComparisonChart_(compSheet, absHelperSheet, absHelper, tableValues.length);
 
   const elapsedHelperSheet = getOrCreateHelperSheet_(ss, '_elapsed_helper');
@@ -446,10 +446,11 @@ function buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimes
       }
       const dailyAvg = Math.round(baseViews / baseDays);
 
+      const fullTitle    = sh.getRange('A1').getValue() || name;
       const escapedName  = name.replace(/'/g, "''");
       const titleFormula = `='${escapedName}'!$A$1`;
 
-      return { row: [titleFormula, dailyAvg], lastVal, name };
+      return { row: [titleFormula, dailyAvg], lastVal, name, fullTitle };
     })
     .filter(Boolean)
     .sort((a, b) => b.lastVal - a.lastVal);
@@ -457,7 +458,8 @@ function buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimes
   const headerRow = ['動画名', '1日平均再生数'];
   return {
     tableValues: [headerRow, ...videoRows.map(r => r.row)],
-    sortedNames: videoRows.map(r => r.name),
+    sortedNames:  videoRows.map(r => r.name),
+    sortedTitles: videoRows.map(r => r.fullTitle),
   };
 }
 
@@ -519,11 +521,11 @@ function getOrCreateHelperSheet_(ss, name) {
  * @param {string[]} sortedTimestamps  タイムスタンプ（降順）
  * @returns {{ numRows: number, numCols: number }}
  */
-function buildAbsoluteTimeHelperTable_(helperSheet, sortedNames, dataMap, sortedTimestamps) {
+function buildAbsoluteTimeHelperTable_(helperSheet, sortedNames, sortedTitles, dataMap, sortedTimestamps) {
   // グラフ用に昇順にする
   const ascTimestamps = [...sortedTimestamps].reverse();
 
-  const headerRow = ['日時', ...sortedNames];
+  const headerRow = ['日時', ...sortedTitles];
   const dataRows  = ascTimestamps.map(ts => [
     new Date(ts),
     ...sortedNames.map(name => dataMap[ts]?.[name] ?? null),
