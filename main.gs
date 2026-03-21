@@ -8,6 +8,9 @@ const CONFIG = {
   // プレイリスト外で個別追加したい動画 ID
   EXTRA_VIDEO_IDS: ['Z_BpyttvaKI', 'WGrgo8-8XwY'],
 
+  // 推移のみ記録（再生数比較シートには含めない）
+  WATCH_ONLY_VIDEO_IDS: [],
+
   // 全動画比較シートのシート名
   COMP_SHEET_NAME: '再生数比較',
 
@@ -60,16 +63,19 @@ function main() {
   const now = new Date();
   now.setMinutes(0, 0, 0);
 
-  const videoIds = collectVideoIds_();
+  const videoIds       = collectVideoIds_();
+  const watchOnlySet   = new Set(CONFIG.WATCH_ONLY_VIDEO_IDS);
+  const excludeSheets  = new Set();
   console.log(`対象: ${videoIds.length} 本`);
 
   videoIds.forEach((id, index) => {
-    processVideo_(ss, id, index, videoIds.length, now);
+    const sheetName = processVideo_(ss, id, index, videoIds.length, now);
+    if (sheetName && watchOnlySet.has(id)) excludeSheets.add(sheetName);
     SpreadsheetApp.flush();
   });
 
   console.log('比較シートを更新します...');
-  updateComparisonSheet_(ss);
+  updateComparisonSheet_(ss, excludeSheets);
   sortVideoSheetsByPublishDate_(ss);
   console.log('完了。');
 }
@@ -90,7 +96,7 @@ function processVideo_(ss, id, index, total, now) {
     const video = fetchVideoData_(id);
     if (!video) {
       console.warn(`[${index + 1}/${total}] 動画が見つかりません (id: ${id})`);
-      return;
+      return null;
     }
 
     const { fullTitle, viewCount, publishedAt } = parseVideoData_(video);
@@ -103,7 +109,7 @@ function processVideo_(ss, id, index, total, now) {
       const existing = sheet.getRange(4, 1, lastRow - 3, 1).getValues();
       if (existing.some(r => r[0] instanceof Date && r[0].getTime() === now.getTime())) {
         console.log(`[${index + 1}/${total}] ${sheetName}: スキップ（同一タイムスタンプ既存）`);
-        return;
+        return sheetName;
       }
     }
 
@@ -119,8 +125,10 @@ function processVideo_(ss, id, index, total, now) {
     const allData_ = lastRow_ >= 4 ? sheet.getRange(4, 1, lastRow_ - 3, 2).getValues() : [];
     updateGrowthSummary_(sheet, viewCount, now, allData_);
 
+    return sheetName;
   } catch (e) {
     console.error(`[${index + 1}/${total}] エラー (id: ${id}): ${e.message}\n${e.stack}`);
+    return null;
   }
 }
 
@@ -178,13 +186,33 @@ function fetchPlaylistVideoIds_() {
 }
 
 /**
- * EXTRA_VIDEO_IDS とプレイリストを合わせて重複排除した動画 ID リストを返す。
+ * EXTRA_VIDEO_IDS, WATCH_ONLY_VIDEO_IDS, プレイリストを合わせて重複排除した動画 ID リストを返す。
  * @returns {string[]}
  */
 function collectVideoIds_() {
   const playlistIds = fetchPlaylistVideoIds_();
   console.log(`プレイリストから ${playlistIds.length} 本を検出`);
-  return [...new Set([...CONFIG.EXTRA_VIDEO_IDS, ...playlistIds])];
+  return [...new Set([...CONFIG.EXTRA_VIDEO_IDS, ...CONFIG.WATCH_ONLY_VIDEO_IDS, ...playlistIds])];
+}
+
+/**
+ * WATCH_ONLY_VIDEO_IDS の動画IDから対応するシート名を解決する。
+ * rebuildComparisonSheet など main() 経由でない呼び出し用。
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * @returns {Set<string>}
+ */
+function resolveWatchOnlySheetNames_(ss) {
+  const exclude = new Set();
+  CONFIG.WATCH_ONLY_VIDEO_IDS.forEach(id => {
+    try {
+      const video = fetchVideoData_(id);
+      if (video) {
+        const title = video.snippet.title;
+        exclude.add(buildSheetName_(title, id));
+      }
+    } catch (_) { /* API エラーは無視 */ }
+  });
+  return exclude;
 }
 
 // ==========================================
@@ -340,12 +368,16 @@ function updateIndividualChart_(sheet) {
  * 全動画の再生数推移を1シートに集約し、比較グラフを2種類生成する。
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
  */
-function updateComparisonSheet_(ss) {
+function updateComparisonSheet_(ss, excludeSheets) {
   SpreadsheetApp.flush();
   Utilities.sleep(2000);
 
+  if (!excludeSheets) excludeSheets = resolveWatchOnlySheetNames_(ss);
+
   const compSheet   = ss.getSheetByName(CONFIG.COMP_SHEET_NAME) || ss.insertSheet(CONFIG.COMP_SHEET_NAME, 0);
-  const videoSheets = ss.getSheets().filter(s => !CONFIG.PRESERVE_SHEET_NAMES.includes(s.getName()));
+  const videoSheets = ss.getSheets().filter(s =>
+    !CONFIG.PRESERVE_SHEET_NAMES.includes(s.getName()) && !excludeSheets.has(s.getName())
+  );
 
   const { dataMap, publishDateMap, elapsedMaps, sortedTimestamps } = aggregateVideoData_(videoSheets);
   if (sortedTimestamps.length === 0) {
