@@ -9,7 +9,7 @@ const CONFIG = {
   EXTRA_VIDEO_IDS: ['Z_BpyttvaKI', 'WGrgo8-8XwY'],
 
   // 推移のみ記録（再生数比較シートには含めない）
-  WATCH_ONLY_VIDEO_IDS: [],
+  WATCH_ONLY_VIDEO_IDS: ['sd-4mwj1UDY'],
 
   // 全動画比較シートのシート名
   COMP_SHEET_NAME: '再生数比較',
