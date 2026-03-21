@@ -67,6 +67,7 @@ function main() {
 
   console.log('比較シートを更新します...');
   updateComparisonSheet_(ss);
+  sortVideoSheetsByPublishDate_(ss);
   console.log('完了。');
 }
 
@@ -894,7 +895,34 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
 }
 
 // ==========================================
-// 12. 管理用ユーティリティ（手動実行）
+// 12. シート並び替え
+// ==========================================
+/**
+ * 動画シートを投稿日時の昇順（古い順が左、新しい順が右）に並び替える。
+ * PRESERVE_SHEET_NAMES のシートは先頭（左側）に固定する。
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ */
+function sortVideoSheetsByPublishDate_(ss) {
+  const sheets = ss.getSheets();
+  const preserved = sheets.filter(s => CONFIG.PRESERVE_SHEET_NAMES.includes(s.getName()));
+  const videoSheets = sheets.filter(s => !CONFIG.PRESERVE_SHEET_NAMES.includes(s.getName()));
+
+  videoSheets.sort((a, b) => {
+    const dateA = a.getRange('A2').getValue();
+    const dateB = b.getRange('A2').getValue();
+    if (!(dateA instanceof Date)) return 1;
+    if (!(dateB instanceof Date)) return -1;
+    return dateA.getTime() - dateB.getTime(); // 昇順: 古い順が左
+  });
+
+  [...preserved, ...videoSheets].forEach((sheet, index) => {
+    ss.setActiveSheet(sheet);
+    ss.moveActiveSheet(index + 1);
+  });
+}
+
+// ==========================================
+// 13. 管理用ユーティリティ（手動実行）
 // ==========================================
 /**
  * 動画シートをすべて削除してリセットする（PRESERVE_SHEET_NAMES は保持）。
