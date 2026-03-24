@@ -74,8 +74,30 @@ function main() {
     SpreadsheetApp.flush();
   });
 
+  // グラフ生成・比較シート更新は updateAllCharts() で別トリガー実行
+  console.log('データ更新完了。');
+}
+
+/**
+ * グラフ・比較シート・シート並び替えを更新する。
+ * main() とは別トリガー（例: 6時間ごと）で実行することで実行時間超過を回避する。
+ */
+function updateAllCharts() {
+  console.log('グラフ・比較シート更新を開始します...');
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // 個別動画グラフを更新
+  const preserveSet = new Set(CONFIG.PRESERVE_SHEET_NAMES);
+  ss.getSheets()
+    .filter(sh => !preserveSet.has(sh.getName()))
+    .forEach(sh => {
+      updateIndividualChart_(sh);
+      SpreadsheetApp.flush();
+    });
+
+  // 比較シートを更新
   console.log('比較シートを更新します...');
-  updateComparisonSheet_(ss, excludeSheets);
+  updateComparisonSheet_(ss);
   sortVideoSheetsByPublishDate_(ss);
   console.log('完了。');
 }
@@ -118,7 +140,7 @@ function processVideo_(ss, id, index, total, now) {
 
     fillInitialGrowthCurve_(sheet, publishedAt);
     runSampling_(sheet, publishedAt);
-    updateIndividualChart_(sheet);
+    // グラフ更新は updateAllCharts() に分離（実行時間超過対策）
     sortVideoSheetDescending_(sheet);
     // ソート後のデータを1回読んで渡す（updateGrowthSummary_ 内の重複読み込みを省く）
     const lastRow_ = sheet.getLastRow();

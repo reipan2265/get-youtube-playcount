@@ -8,13 +8,12 @@ This file provides context and conventions for AI assistants (Claude Code and si
 
 **Intended purpose:** Query YouTube's API or scrape public data to fetch video view/play counts, likely returning structured data that can be used programmatically or displayed to users.
 
-## Repository State (as of 2026-03-07)
+## Repository State (as of 2026-03-25)
 
-- Single file: `README.md` (contains only a heading)
-- No language, framework, or dependencies chosen yet
-- No tests, CI/CD, or build tooling configured
-
-When implementation begins, this file should be updated to reflect the actual stack and conventions.
+- Fully implemented as a Google Apps Script project
+- Language: JavaScript (GAS environment)
+- Deploy tooling: clasp (`npm run push` / `npm run deploy`)
+- No tests configured
 
 ## Git Workflow
 
@@ -45,96 +44,70 @@ Update README with usage examples
 
 Avoid vague messages like "fix stuff" or "update code".
 
-## Development Setup (To Be Determined)
+## Development Setup
 
-No language or framework has been selected. When the stack is chosen, document here:
-
-- **Language:** TBD
-- **Runtime/Version:** TBD
-- **Package manager:** TBD
-- **Key dependencies:** TBD
-
-### Expected Setup Steps (Template)
+- **Language:** JavaScript (Google Apps Script)
+- **Package manager:** npm
+- **Key dependencies:** clasp, `@types/google-apps-script`
 
 ```bash
-# Clone and enter repo
-git clone <repo-url>
-cd GetYoutubePlayCount
+# Install dependencies (type definitions only — not needed for runtime)
+npm install
 
-# Install dependencies (update once stack is decided)
-# e.g., pip install -r requirements.txt
-# e.g., npm install
+# Push code to GAS
+npm run push
 
-# Run the tool
-# e.g., python main.py --video-id <VIDEO_ID>
+# Push + git commit & push
+npm run deploy
 ```
 
-## Likely Implementation Considerations
+## Architecture
 
-### YouTube Data API v3
+### Trigger Design
 
-The most reliable way to fetch view counts is via the YouTube Data API v3:
+GAS has a 6-minute execution limit. To avoid timeouts, the script is split into two functions with separate triggers:
 
-- Endpoint: `GET https://www.googleapis.com/youtube/v3/videos`
-- Parameters: `part=statistics`, `id=<VIDEO_ID>`
-- Requires a Google API key
-- Returns `viewCount`, `likeCount`, `commentCount`, etc.
+| Function | Frequency | Responsibility |
+|----------|-----------|----------------|
+| `main()` | Every 1 hour | Fetch & record view counts only |
+| `updateAllCharts()` | Every 6 hours | Update charts, comparison sheet, sheet order |
 
-### API Key Handling
+Chart operations (`insertChart`, `updateChart`) are the primary cause of timeouts, so they are isolated from data collection.
 
-- Never hardcode API keys in source files
-- Use environment variables (e.g., `YOUTUBE_API_KEY`)
-- Add `.env` files to `.gitignore`
+### Key Files
 
-### Rate Limiting
+- `main.gs` — All logic (single file for GAS compatibility)
+- `appsscript.json` — GAS manifest (API scopes, runtime)
+- `package.json` — clasp deploy scripts
 
-YouTube Data API v3 has a daily quota (10,000 units by default). Each `videos.list` call costs 1 unit. Factor this into any batching or caching strategy.
+## Code Conventions
 
-## Testing
+- All logic lives in `main.gs` (GAS requires a single deployable file or flat structure)
+- Private helper functions use a trailing underscore (`fetchVideoData_`, `runSampling_`, etc.)
+- `CONFIG` at the top of `main.gs` is the only place users need to edit
+- `SpreadsheetApp.flush()` is called after heavy sheet operations to prevent buffering-related timeouts
+- `retryOnTimeout_()` wraps operations that are prone to transient GAS timeouts
 
-No tests exist yet. When added, document the test runner and how to run tests here. Preferred patterns:
-
-- Unit tests for parsing/data transformation logic
-- Integration tests (mocked or real API) for the HTTP client
-- Test files should live in a `tests/` directory
-
-```bash
-# Example (update once stack is chosen)
-pytest tests/
-# or
-npm test
-```
-
-## Code Conventions (To Be Established)
-
-Once the language is chosen, add specific style/lint rules here. General principles to follow regardless of language:
-
-- Keep functions small and focused on a single responsibility
-- Validate inputs at system boundaries (user input, API responses)
-- Prefer explicit error messages over silent failures
-- Do not over-engineer: avoid abstractions that serve only one use case
-
-## File Structure (Anticipated)
+## File Structure
 
 ```
 GetYoutubePlayCount/
 ├── CLAUDE.md           # This file
 ├── README.md           # User-facing documentation
-├── .gitignore          # Excludes .env, build artifacts, etc.
-├── src/ or main.*      # Core implementation
-└── tests/              # Test files
+├── main.gs             # All GAS logic
+├── appsscript.json     # GAS manifest
+├── jsconfig.json       # Editor type support
+├── package.json        # clasp scripts + type dep
+└── package-lock.json
 ```
-
-Update this section once the actual structure is created.
 
 ## Key Commands Reference
 
-| Task | Command (TBD) |
-|------|--------------|
-| Install dependencies | TBD |
-| Run tool | TBD |
-| Run tests | TBD |
-| Lint/format | TBD |
+| Task | Command |
+|------|---------|
+| Install dependencies | `npm install` |
+| Push to GAS | `npm run push` |
+| Push + git deploy | `npm run deploy` |
 
 ## Notes for AI Assistants
 
