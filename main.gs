@@ -74,7 +74,8 @@ function main() {
     SpreadsheetApp.flush();
   });
 
-  // グラフ生成・比較シート更新は updateAllCharts() で別トリガー実行
+  // 比較シートのテーブルを更新（チャートは updateAllCharts() で別途更新）
+  updateComparisonTableOnly_(ss, excludeSheets);
   console.log('データ更新完了。');
 }
 
@@ -386,6 +387,38 @@ function updateIndividualChart_(sheet) {
 // ==========================================
 // 7. 比較シートの生成
 // ==========================================
+/**
+ * 比較シートのテーブルデータのみを更新する（チャートは変更しない）。
+ * main() から毎時呼び出し、最新再生数・増加数を常に最新に保つ。
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * @param {Set<string>} excludeSheets  除外するシート名のセット
+ */
+function updateComparisonTableOnly_(ss, excludeSheets) {
+  if (!excludeSheets) excludeSheets = resolveWatchOnlySheetNames_(ss);
+
+  const compSheet = ss.getSheetByName(CONFIG.COMP_SHEET_NAME);
+  if (!compSheet) return;
+
+  const videoSheets = ss.getSheets().filter(s =>
+    !CONFIG.PRESERVE_SHEET_NAMES.includes(s.getName()) && !excludeSheets.has(s.getName())
+  );
+
+  const { dataMap, publishDateMap, sortedTimestamps } = aggregateVideoData_(videoSheets);
+  if (sortedTimestamps.length === 0) return;
+
+  const { tableValues } = buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimestamps);
+
+  const rows = tableValues.length;
+  const cols = tableValues[0].length;
+
+  // チャートはそのままでテーブル範囲のみ上書き
+  compSheet.getRange(1, 1, rows, cols).setValues(tableValues);
+  compSheet.getRange(2, 2, rows - 1, 1).setNumberFormat('#,###').setFontWeight('bold');
+  compSheet.getRange(2, 3, rows - 1, 1).setNumberFormat('0');
+  SpreadsheetApp.flush();
+  console.log('比較シートのテーブルを更新しました。');
+}
+
 /**
  * 全動画の再生数推移を1シートに集約し、比較グラフを2種類生成する。
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
