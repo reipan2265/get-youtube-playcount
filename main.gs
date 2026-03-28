@@ -26,6 +26,10 @@ const CONFIG = {
   // 増加量サマリーの表示期間数（直近 + この数だけ前の期間を表示）
   SUMMARY_WINDOWS: 5,
 
+  // テスト用: true にすると同一タイムスタンプのスキップを無視して強制書き込みする
+  // 通常運用では必ず false にすること
+  FORCE_WRITE: false,
+
   // データ間引き設定
   // keepEveryHours: null = 全件保持（トリガー間隔ごとに1件 = 実質1時間ごと）
   //                 数値 = その間隔（時間）ごとに1件保持
@@ -133,8 +137,9 @@ function processVideo_(ss, id, index, total, now, rank, preloadedVideo) {
     const sheet     = getOrCreateVideoSheet_(ss, sheetName, fullTitle, publishedAt);
 
     // 同一タイムスタンプが既に存在する場合はスキップ（冪等性の担保）
+    // CONFIG.FORCE_WRITE = true のときはスキップしない
     const lastRow = sheet.getLastRow();
-    if (lastRow >= 4) {
+    if (!CONFIG.FORCE_WRITE && lastRow >= 4) {
       const existing = sheet.getRange(4, 1, lastRow - 3, 1).getValues();
       if (existing.some(r => r[0] instanceof Date && r[0].getTime() === now.getTime())) {
         console.log(`[${index + 1}/${total}] ${sheetName}: スキップ（同一タイムスタンプ既存）`);
