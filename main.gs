@@ -63,13 +63,17 @@ function main() {
   const now = new Date();
   now.setMinutes(0, 0, 0);
 
-  const videoIds       = collectVideoIds_();
-  const watchOnlySet   = new Set(CONFIG.WATCH_ONLY_VIDEO_IDS);
-  const excludeSheets  = new Set();
+  const videoIds     = collectVideoIds_();
+  const watchOnlySet = new Set(CONFIG.WATCH_ONLY_VIDEO_IDS);
+  const excludeSheets = new Set();
   console.log(`対象: ${videoIds.length} 本`);
 
+  // 全動画の詳細を一括取得してチャンネル内順位を算出
+  const videoDataMap = fetchAllVideoData_(videoIds);
+  const rankMap      = computeRankMap_(videoIds, videoDataMap);
+
   videoIds.forEach((id, index) => {
-    const sheetName = processVideo_(ss, id, index, videoIds.length, now);
+    const sheetName = processVideo_(ss, id, index, videoIds.length, now, rankMap[id] ?? null, videoDataMap[id] ?? null);
     if (sheetName && watchOnlySet.has(id)) excludeSheets.add(sheetName);
     SpreadsheetApp.flush();
   });
@@ -109,14 +113,16 @@ function updateAllCharts() {
 /**
  * 1本の動画を処理する（取得 → 記録 → 補完 → 間引き → グラフ更新）。
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
- * @param {string} id     YouTube 動画 ID
- * @param {number} index  現在のインデックス（ログ用）
- * @param {number} total  総件数（ログ用）
- * @param {Date}   now    実行日時
+ * @param {string}      id              YouTube 動画 ID
+ * @param {number}      index           現在のインデックス（ログ用）
+ * @param {number}      total           総件数（ログ用）
+ * @param {Date}        now             実行日時
+ * @param {number|null} rank            チャンネル内再生数順位（1が最多）
+ * @param {object|null} preloadedVideo  fetchAllVideoData_ で取得済みの動画オブジェクト
  */
-function processVideo_(ss, id, index, total, now) {
+function processVideo_(ss, id, index, total, now, rank, preloadedVideo) {
   try {
-    const video = fetchVideoData_(id);
+    const video = preloadedVideo ?? fetchVideoData_(id);
     if (!video) {
       console.warn(`[${index + 1}/${total}] 動画が見つかりません (id: ${id})`);
       return null;
@@ -136,8 +142,8 @@ function processVideo_(ss, id, index, total, now) {
       }
     }
 
-    sheet.appendRow([now, viewCount]);
-    console.log(`[${index + 1}/${total}] ${sheetName}: ${viewCount.toLocaleString()} 回`);
+    sheet.appendRow([now, viewCount, rank ?? '']);
+    console.log(`[${index + 1}/${total}] ${sheetName}: ${viewCount.toLocaleString()} 回 (順位: ${rank ?? '?'})`);
 
     fillInitialGrowthCurve_(sheet, publishedAt);
     runSampling_(sheet, publishedAt);
@@ -179,6 +185,44 @@ function parseVideoData_(video) {
     viewCount  : Number(video.statistics.viewCount),
     publishedAt: new Date(video.snippet.publishedAt),
   };
+}
+
+/**
+ * 複数の動画 ID を一括取得して { videoId: item } のマップを返す。
+ * YouTube Data API は1リクエストで最大50件対応。
+ * @param {string[]} videoIds
+ * @returns {Object<string, object>}
+ */
+function fetchAllVideoData_(videoIds) {
+  const result = {};
+  for (let i = 0; i < videoIds.length; i += 50) {
+    const batch = videoIds.slice(i, i + 50);
+    try {
+      const res = YouTube.Videos.list('snippet,statistics', { id: batch.join(',') });
+      res.items?.forEach(item => { result[item.id] = item; });
+    } catch (e) {
+      console.warn(`動画情報一括取得失敗 (offset ${i}): ${e.message}`);
+    }
+  }
+  return result;
+}
+
+/**
+ * videoDataMap を元にチャンネル内の再生数ランクマップを返す。
+ * ランクは 1 始まりで再生数が多い順に付与する。
+ * @param {string[]} videoIds
+ * @param {Object<string, object>} videoDataMap
+ * @returns {Object<string, number>}
+ */
+function computeRankMap_(videoIds, videoDataMap) {
+  const sorted = [...videoIds].sort((a, b) => {
+    const va = Number(videoDataMap[a]?.statistics?.viewCount ?? 0);
+    const vb = Number(videoDataMap[b]?.statistics?.viewCount ?? 0);
+    return vb - va;
+  });
+  const rankMap = {};
+  sorted.forEach((id, index) => { rankMap[id] = index + 1; });
+  return rankMap;
 }
 
 /**
@@ -287,9 +331,9 @@ function getOrCreateVideoSheet_(ss, sheetName, fullTitle, publishedAt) {
 
   sheet.getRange('A1').setValue(fullTitle).setFontWeight('bold');
   sheet.getRange('A2').setValue(publishedAt);
-  sheet.getRange('A3:B3').setValues([['日時', '再生数']]).setBackground('#eeeeee');
+  sheet.getRange('A3:C3').setValues([['日時', '再生数', '順位']]).setBackground('#eeeeee');
   sheet.setFrozenRows(3);
-  sheet.appendRow([publishedAt, 0]); // 投稿日時点の起点レコード（再生数 = 0）
+  sheet.appendRow([publishedAt, 0, '']); // 投稿日時点の起点レコード（再生数 = 0、順位は未計測）
 
   return sheet;
 }
@@ -302,7 +346,7 @@ function getOrCreateVideoSheet_(ss, sheetName, fullTitle, publishedAt) {
 function sortVideoSheetDescending_(sheet) {
   const lastRow = sheet.getLastRow();
   if (lastRow <= 4) return;
-  sheet.getRange(4, 1, lastRow - 3, 2).sort({ column: 1, ascending: false });
+  sheet.getRange(4, 1, lastRow - 3, 3).sort({ column: 1, ascending: false });
 }
 
 // ==========================================
@@ -318,7 +362,7 @@ function runSampling_(sheet, publishedAt) {
   const dataCount = sheet.getLastRow() - 3;
   if (dataCount < CONFIG.SAMPLING.MIN_ROWS_TO_SAMPLE) return;
 
-  const values     = sheet.getRange(4, 1, dataCount, 2).getValues();
+  const values     = sheet.getRange(4, 1, dataCount, 3).getValues();
   const seenBucket = new Set();
 
   const keepRows = values.filter((row, index) => {
@@ -345,8 +389,8 @@ function runSampling_(sheet, publishedAt) {
 
   if (keepRows.length < values.length) {
     console.log(`間引き [${sheet.getName()}]: ${values.length} → ${keepRows.length} 行`);
-    sheet.getRange(4, 1, sheet.getLastRow() - 3, 2).clearContent();
-    sheet.getRange(4, 1, keepRows.length, 2).setValues(keepRows);
+    sheet.getRange(4, 1, sheet.getLastRow() - 3, 3).clearContent();
+    sheet.getRange(4, 1, keepRows.length, 3).setValues(keepRows);
   }
 }
 
@@ -1010,12 +1054,12 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
     if (curMs >= t0 + d1) break;
     const v = Math.round(C * Math.pow(curMs - t0, alpha));
     if (v <= 0) continue;
-    newRows.push([new Date(curMs), v]);
+    newRows.push([new Date(curMs), v, '']); // 補間点は順位未計測
   }
   if (newRows.length === 0) return;
 
   sheet.insertRowsAfter(4, newRows.length);
-  sheet.getRange(5, 1, newRows.length, 2).setValues(newRows);
+  sheet.getRange(5, 1, newRows.length, 3).setValues(newRows);
   PropertiesService.getScriptProperties().setProperty(propKey, 'true');
   console.log(`成長曲線を補完 [${sheet.getName()}]: ${newRows.length} 点追加 (alpha=${alpha.toFixed(2)})`);
 }
