@@ -72,9 +72,10 @@ function main() {
   const excludeSheets = new Set();
   console.log(`対象: ${videoIds.length} 本`);
 
-  // 全動画の詳細を一括取得してチャンネル内順位を算出
+  // 全動画の詳細を一括取得
   const videoDataMap = fetchAllVideoData_(videoIds);
-  const rankMap      = computeChannelRankMap_(videoDataMap);
+  // チャンネル内順位は12時間に1回だけ算出（API負荷軽減）
+  const rankMap      = shouldUpdateRank_() ? computeChannelRankMap_(videoDataMap) : {};
 
   videoIds.forEach((id, index) => {
     const sheetName = processVideo_(ss, id, index, videoIds.length, now, rankMap[id] ?? null, videoDataMap[id] ?? null);
@@ -98,7 +99,7 @@ function updateAllCharts() {
   // 個別動画グラフを更新
   const preserveSet = new Set(CONFIG.PRESERVE_SHEET_NAMES);
   ss.getSheets()
-    .filter(sh => !preserveSet.has(sh.getName()))
+    .filter(sh => !preserveSet.has(sh.getName()) && !sh.getName().startsWith('_'))
     .forEach(sh => {
       updateIndividualChart_(sh);
       SpreadsheetApp.flush();
@@ -337,6 +338,23 @@ function collectVideoIds_() {
 }
 
 /**
+ * チャンネル内ランクを今回更新すべきか判定する。
+ * 前回更新から 12 時間未満の場合は false を返してスキップする。
+ * @returns {boolean}
+ */
+function shouldUpdateRank_() {
+  const INTERVAL_MS = 12 * 60 * 60 * 1000;
+  const props = PropertiesService.getScriptProperties();
+  const last  = Number(props.getProperty('last_rank_update') || '0');
+  if (Date.now() - last >= INTERVAL_MS) {
+    props.setProperty('last_rank_update', String(Date.now()));
+    return true;
+  }
+  console.log('チャンネル内ランク: 前回更新から 12 時間未満のためスキップ');
+  return false;
+}
+
+/**
  * WATCH_ONLY_VIDEO_IDS の動画IDから対応するシート名を解決する。
  * rebuildComparisonSheet など main() 経由でない呼び出し用。
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
@@ -431,6 +449,25 @@ function sortVideoSheetDescending_(sheet) {
   const lastRow = sheet.getLastRow();
   if (lastRow <= 4) return;
   sheet.getRange(4, 1, lastRow - 3, 3).sort({ column: 1, ascending: false });
+}
+
+/**
+ * 動画シートをチャンネル ID ごとにグループ化して返す。
+ * B2 = channelId、C2 = channelTitle を使用する。
+ * @param {GoogleAppsScript.Spreadsheet.Sheet[]} videoSheets
+ * @returns {{ channelId: string, channelTitle: string, sheets: GoogleAppsScript.Spreadsheet.Sheet[] }[]}
+ */
+function groupSheetsByChannel_(videoSheets) {
+  const groups = {};
+  videoSheets.forEach(sh => {
+    const channelId    = sh.getRange('B2').getValue() || '_unknown';
+    const channelTitle = sh.getRange('C2').getValue() || channelId;
+    if (!groups[channelId]) groups[channelId] = { channelTitle, sheets: [] };
+    groups[channelId].sheets.push(sh);
+  });
+  return Object.entries(groups)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([channelId, { channelTitle, sheets }]) => ({ channelId, channelTitle, sheets }));
 }
 
 // ==========================================
@@ -528,7 +565,7 @@ function updateComparisonTableOnly_(ss, excludeSheets) {
   if (!compSheet) return;
 
   const videoSheets = ss.getSheets().filter(s =>
-    !CONFIG.PRESERVE_SHEET_NAMES.includes(s.getName()) && !excludeSheets.has(s.getName())
+    !CONFIG.PRESERVE_SHEET_NAMES.includes(s.getName()) && !s.getName().startsWith('_') && !excludeSheets.has(s.getName())
   );
 
   const { dataMap, publishDateMap, sortedTimestamps } = aggregateVideoData_(videoSheets);
@@ -559,7 +596,7 @@ function updateComparisonSheet_(ss, excludeSheets) {
 
   const compSheet   = ss.getSheetByName(CONFIG.COMP_SHEET_NAME) || ss.insertSheet(CONFIG.COMP_SHEET_NAME, 0);
   const videoSheets = ss.getSheets().filter(s =>
-    !CONFIG.PRESERVE_SHEET_NAMES.includes(s.getName()) && !excludeSheets.has(s.getName())
+    !CONFIG.PRESERVE_SHEET_NAMES.includes(s.getName()) && !s.getName().startsWith('_') && !excludeSheets.has(s.getName())
   );
 
   const { dataMap, publishDateMap, elapsedMaps, sortedTimestamps } = aggregateVideoData_(videoSheets);
@@ -572,15 +609,42 @@ function updateComparisonSheet_(ss, excludeSheets) {
 
   renderComparisonSheet_(compSheet, tableValues);
 
-  const absHelperSheet = getOrCreateHelperSheet_(ss, '_abs_helper');
-  const absHelper = buildAbsoluteTimeHelperTable_(absHelperSheet, sortedNames, sortedTitles, dataMap, sortedTimestamps);
-  buildComparisonChart_(compSheet, absHelperSheet, absHelper, tableValues.length);
+  // チャンネルごとにグラフセット（再生数絶対時刻・経過日数・順位）を生成
+  const { HEIGHT } = CONFIG.CHART;
+  const channelGroups = groupSheetsByChannel_(videoSheets);
+  let nextChartRow = tableValues.length + 2;
 
-  const elapsedHelperSheet = getOrCreateHelperSheet_(ss, '_elapsed_helper');
-  buildElapsedDaysChart_(compSheet, elapsedHelperSheet, videoSheets, publishDateMap, elapsedMaps, tableValues.length);
+  channelGroups.forEach(({ channelId, channelTitle, sheets }, idx) => {
+    // このチャンネルの動画だけでデータを集約
+    const ch = aggregateVideoData_(sheets);
+    if (ch.sortedTimestamps.length === 0) return;
 
-  const rankHelperSheet = getOrCreateHelperSheet_(ss, '_rank_helper');
-  buildChannelRankCharts_(ss, compSheet, rankHelperSheet, videoSheets, tableValues.length);
+    // 再生数降順でソートした名前・タイトルリストを構築
+    const chVideoRows = sheets.map(sh => {
+      const name    = sh.getName();
+      const lastVal = ch.sortedTimestamps.find(ts => ch.dataMap[ts]?.[name] != null);
+      return { name, title: sh.getRange('A1').getValue() || name, lastVal: lastVal ? ch.dataMap[lastVal][name] : 0 };
+    }).sort((a, b) => b.lastVal - a.lastVal);
+
+    const chNames  = chVideoRows.map(r => r.name);
+    const chTitles = chVideoRows.map(r => r.title);
+
+    // ① 再生数推移（絶対時刻）
+    const absHelper = getOrCreateHelperSheet_(ss, `_abs_${idx}`);
+    const absInfo   = buildAbsoluteTimeHelperTable_(absHelper, chNames, chTitles, ch.dataMap, ch.sortedTimestamps);
+    buildComparisonChart_(compSheet, absHelper, absInfo, nextChartRow, `再生数推移 — ${channelTitle}`);
+    nextChartRow += Math.ceil(HEIGHT / 21) + 5;
+
+    // ② 再生数推移（経過日数）
+    const elapsedHelper = getOrCreateHelperSheet_(ss, `_elapsed_${idx}`);
+    buildElapsedDaysChart_(compSheet, elapsedHelper, sheets, ch.publishDateMap, ch.elapsedMaps, nextChartRow, channelTitle);
+    nextChartRow += Math.ceil(HEIGHT / 21) + 5;
+
+    // ③ チャンネル内順位推移
+    const rankHelper = getOrCreateHelperSheet_(ss, `_rank_${idx}`);
+    buildChannelRankChart_(compSheet, rankHelper, sheets, nextChartRow, channelTitle);
+    nextChartRow += Math.ceil(HEIGHT / 21) + 5;
+  });
 }
 
 /**
@@ -786,12 +850,13 @@ function buildAbsoluteTimeHelperTable_(helperSheet, sortedNames, sortedTitles, d
 
 /**
  * 比較シートに絶対日時を横軸とした折れ線グラフを追加する。
- * ヘルパーテーブルのデータを参照する。
  * @param {GoogleAppsScript.Spreadsheet.Sheet} compSheet
- * @param {{ startCol: number, numRows: number, numCols: number }} helperInfo
- * @param {number} mainTableRows  メインテーブルの行数（グラフ位置の計算基点）
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} helperSheet
+ * @param {{ numRows: number, numCols: number }} helperInfo
+ * @param {number} startRow  グラフを配置する開始行
+ * @param {string} title     グラフタイトル
  */
-function buildComparisonChart_(compSheet, helperSheet, helperInfo, mainTableRows) {
+function buildComparisonChart_(compSheet, helperSheet, helperInfo, startRow, title) {
   const { WIDTH, HEIGHT } = CONFIG.CHART;
   const { numRows, numCols } = helperInfo;
 
@@ -799,8 +864,8 @@ function buildComparisonChart_(compSheet, helperSheet, helperInfo, mainTableRows
     .asLineChart()
     .addRange(helperSheet.getRange(1, 1, numRows, numCols))
     .setNumHeaders(1)
-    .setPosition(mainTableRows + 2, 1, 0, 0)
-    .setOption('title', '全動画 再生数推移')
+    .setPosition(startRow, 1, 0, 0)
+    .setOption('title', title || '再生数推移')
     .setOption('width', WIDTH)
     .setOption('height', HEIGHT)
     .setOption('interpolateNulls', true)
@@ -830,15 +895,15 @@ function buildComparisonChart_(compSheet, helperSheet, helperInfo, mainTableRows
 // ==========================================
 /**
  * 全動画の横軸を「投稿日からの経過日数」に正規化した折れ線グラフを生成する。
- * ヘルパーテーブルを専用シートに書き込みグラフのデータ源とする。
- * @param {GoogleAppsScript.Spreadsheet.Sheet}   compSheet       グラフ配置先
- * @param {GoogleAppsScript.Spreadsheet.Sheet}   helperSheet     データ書き込み先ヘルパーシート
+ * @param {GoogleAppsScript.Spreadsheet.Sheet}   compSheet
+ * @param {GoogleAppsScript.Spreadsheet.Sheet}   helperSheet
  * @param {GoogleAppsScript.Spreadsheet.Sheet[]} videoSheets
  * @param {object} publishDateMap  { sheetName: Date }
  * @param {object} elapsedMaps    { sheetName: Map<elapsedHours, viewCount> }
- * @param {number} mainTableRows   メインテーブルの行数（グラフ位置の計算基点）
+ * @param {number} startRow       グラフを配置する開始行
+ * @param {string} channelTitle   グラフタイトルに付加するチャンネル名
  */
-function buildElapsedDaysChart_(compSheet, helperSheet, videoSheets, publishDateMap, elapsedMaps, mainTableRows) {
+function buildElapsedDaysChart_(compSheet, helperSheet, videoSheets, publishDateMap, elapsedMaps, startRow, channelTitle) {
   const validSheets = videoSheets.filter(sh => publishDateMap[sh.getName()]);
   if (validSheets.length === 0) return;
 
@@ -870,16 +935,13 @@ function buildElapsedDaysChart_(compSheet, helperSheet, videoSheets, publishDate
   }
   helperSheet.getRange(1, 1, numRows, numCols).setValues(tableData);
 
-  // グラフ作成（1枚目グラフの下に配置）
   const { WIDTH, HEIGHT } = CONFIG.CHART;
-  const chartRow = mainTableRows + 2 + Math.ceil(HEIGHT / 21) + 5;
-
   const chart = compSheet.newChart()
     .asLineChart()
     .addRange(helperSheet.getRange(1, 1, numRows, numCols))
     .setNumHeaders(1)
-    .setPosition(chartRow, 1, 0, 0)
-    .setOption('title', '全動画 再生数推移（投稿日起点）')
+    .setPosition(startRow, 1, 0, 0)
+    .setOption('title', `再生数推移（投稿日起点）— ${channelTitle || ''}`)
     .setOption('width', WIDTH)
     .setOption('height', HEIGHT)
     .setOption('interpolateNulls', true)
@@ -920,117 +982,71 @@ function getRoundedElapsedHours_(elapsedMs) {
 // 9. チャンネル内順位グラフ
 // ==========================================
 /**
- * チャンネルごとに「チャンネル内順位の推移」折れ線グラフを比較シートに追加する。
- * 各動画シートの C 列（順位）を時系列で集約し、チャンネルごとに 1 グラフ生成する。
- * Y 軸は昇順逆転（direction:-1）により、順位 1（最上位）がグラフ上部に表示される。
- * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * チャンネル内順位の推移グラフを 1 チャンネル分生成する。
+ * 各動画シートの C 列（順位）を時系列で集約する。
+ * Y 軸は逆転（direction:-1）し、順位 1 がグラフ上部に表示される。
  * @param {GoogleAppsScript.Spreadsheet.Sheet} compSheet
  * @param {GoogleAppsScript.Spreadsheet.Sheet} rankHelperSheet
- * @param {GoogleAppsScript.Spreadsheet.Sheet[]} videoSheets
- * @param {number} mainTableRows  テーブル行数（グラフ位置の計算基点）
+ * @param {GoogleAppsScript.Spreadsheet.Sheet[]} channelSheets  対象チャンネルの動画シート
+ * @param {number} startRow     グラフを配置する開始行
+ * @param {string} channelTitle チャンネル名
  */
-function buildChannelRankCharts_(ss, compSheet, rankHelperSheet, videoSheets, mainTableRows) {
+function buildChannelRankChart_(compSheet, rankHelperSheet, channelSheets, startRow, channelTitle) {
   const { WIDTH, HEIGHT } = CONFIG.CHART;
+  const allTimestamps = new Set();
+  const rankDataMap   = {};
 
-  // 動画シートをチャンネルごとにグループ化（B2 = channelId、C2 = channelTitle）
-  const channelGroups = {}; // { channelId: { title, sheets: [] } }
-  videoSheets.forEach(sh => {
-    const channelId    = sh.getRange('B2').getValue();
-    const channelTitle = sh.getRange('C2').getValue() || channelId || 'Unknown';
-    if (!channelId) return;
-    if (!channelGroups[channelId]) channelGroups[channelId] = { title: channelTitle, sheets: [] };
-    channelGroups[channelId].sheets.push(sh);
+  channelSheets.forEach(sh => {
+    const name    = sh.getName();
+    const lastRow = sh.getLastRow();
+    if (lastRow < 4) return;
+    sh.getRange(4, 1, lastRow - 3, 3).getValues().forEach(row => {
+      if (!(row[0] instanceof Date) || row[2] === '' || row[2] == null) return;
+      const ts = formatTimestamp_(row[0]);
+      allTimestamps.add(ts);
+      setNestedValue_(rankDataMap, ts, name, Number(row[2]));
+    });
   });
 
-  if (Object.keys(channelGroups).length === 0) {
-    console.log('チャンネル情報がないためランクグラフをスキップ（次回 main() 実行後に記録されます）');
+  if (allTimestamps.size === 0) {
+    console.log(`チャンネル ${channelTitle}: 順位データなしのためグラフをスキップ`);
     return;
   }
 
-  // 絶対時刻グラフ・経過日数グラフの下に配置
-  const baseChartRow = mainTableRows + 2 + 2 * (Math.ceil(HEIGHT / 21) + 5);
-  let chartOffset = 0;
+  const sheetNames  = channelSheets.map(sh => sh.getName());
+  const sheetTitles = channelSheets.map(sh => sh.getRange('A1').getValue() || sh.getName());
+  const ascTs       = [...allTimestamps].sort();
 
-  Object.entries(channelGroups)
-    .sort(([a], [b]) => a.localeCompare(b)) // チャンネル ID でソートして順序を安定させる
-    .forEach(([channelId, { title: channelTitle, sheets }]) => {
-      // 各動画シートの C 列（順位）を時系列で収集
-      const allTimestamps = new Set();
-      const rankDataMap   = {}; // { timestamp: { sheetName: rank } }
+  const tableData = [
+    ['日時', ...sheetTitles],
+    ...ascTs.map(ts => [new Date(ts), ...sheetNames.map(n => rankDataMap[ts]?.[n] ?? null)]),
+  ];
 
-      sheets.forEach(sh => {
-        const name    = sh.getName();
-        const lastRow = sh.getLastRow();
-        if (lastRow < 4) return;
+  const numRows = tableData.length;
+  const numCols = tableData[0].length;
+  if (rankHelperSheet.getMaxRows() < numRows) rankHelperSheet.insertRowsAfter(rankHelperSheet.getMaxRows(), numRows - rankHelperSheet.getMaxRows());
+  if (rankHelperSheet.getMaxColumns() < numCols) rankHelperSheet.insertColumnsAfter(rankHelperSheet.getMaxColumns(), numCols - rankHelperSheet.getMaxColumns());
+  rankHelperSheet.getRange(1, 1, numRows, numCols).setValues(tableData);
 
-        sh.getRange(4, 1, lastRow - 3, 3).getValues().forEach(row => {
-          if (!(row[0] instanceof Date)) return;
-          const rank = row[2];
-          if (rank === '' || rank == null) return; // 順位未記録行はスキップ
-          const ts = formatTimestamp_(row[0]);
-          allTimestamps.add(ts);
-          setNestedValue_(rankDataMap, ts, name, Number(rank));
-        });
-      });
-
-      if (allTimestamps.size === 0) {
-        console.log(`チャンネル ${channelTitle}: 順位データなしのためグラフをスキップ`);
-        return;
-      }
-
-      const sheetNames  = sheets.map(sh => sh.getName());
-      const sheetTitles = sheets.map(sh => sh.getRange('A1').getValue() || sh.getName());
-      const ascTs       = [...allTimestamps].sort(); // 昇順（グラフの左→右）
-
-      const tableData = [
-        ['日時', ...sheetTitles],
-        ...ascTs.map(ts => [
-          new Date(ts),
-          ...sheetNames.map(name => rankDataMap[ts]?.[name] ?? null),
-        ]),
-      ];
-
-      const numRows = tableData.length;
-      const numCols = tableData[0].length;
-
-      if (rankHelperSheet.getMaxRows() < numRows) {
-        rankHelperSheet.insertRowsAfter(rankHelperSheet.getMaxRows(), numRows - rankHelperSheet.getMaxRows());
-      }
-      if (rankHelperSheet.getMaxColumns() < numCols) {
-        rankHelperSheet.insertColumnsAfter(rankHelperSheet.getMaxColumns(), numCols - rankHelperSheet.getMaxColumns());
-      }
-      rankHelperSheet.getRange(1, 1, numRows, numCols).setValues(tableData);
-
-      const chart = compSheet.newChart()
-        .asLineChart()
-        .addRange(rankHelperSheet.getRange(1, 1, numRows, numCols))
-        .setNumHeaders(1)
-        .setPosition(baseChartRow + chartOffset, 1, 0, 0)
-        .setOption('title', `チャンネル内順位推移 — ${channelTitle}（値が小さいほど上位）`)
-        .setOption('width', WIDTH)
-        .setOption('height', HEIGHT)
-        .setOption('interpolateNulls', true)
-        .setOption('pointSize', 2)
-        .setOption('lineWidth', 2)
-        .setOption('legend', { position: 'right', textStyle: { fontSize: 10 } })
-        .setOption('chartArea', { left: '6%', top: '10%', width: '65%', height: '75%' })
-        .setOption('hAxis', {
-          slantedText: true,
-          slantedTextAngle: 30,
-          textStyle: { fontSize: 9 },
-        })
-        .setOption('vAxis', {
-          format: '#,##0',
-          direction: -1, // 順位 1（最上位）をグラフ上部に表示
-          gridlines: { color: '#b0b0b0' },
-          minorGridlines: { count: 4, color: '#e8e8e8' },
-        })
-        .build();
-
-      compSheet.insertChart(chart);
-      console.log(`チャンネル内順位グラフを生成しました（${channelTitle}、${sheets.length} 動画）`);
-      chartOffset += Math.ceil(HEIGHT / 21) + 5;
-    });
+  compSheet.insertChart(
+    compSheet.newChart()
+      .asLineChart()
+      .addRange(rankHelperSheet.getRange(1, 1, numRows, numCols))
+      .setNumHeaders(1)
+      .setPosition(startRow, 1, 0, 0)
+      .setOption('title', `チャンネル内順位推移 — ${channelTitle}（値が小さいほど上位）`)
+      .setOption('width', WIDTH)
+      .setOption('height', HEIGHT)
+      .setOption('interpolateNulls', true)
+      .setOption('pointSize', 2)
+      .setOption('lineWidth', 2)
+      .setOption('legend', { position: 'right', textStyle: { fontSize: 10 } })
+      .setOption('chartArea', { left: '6%', top: '10%', width: '65%', height: '75%' })
+      .setOption('hAxis', { slantedText: true, slantedTextAngle: 30, textStyle: { fontSize: 9 } })
+      .setOption('vAxis', { format: '#,##0', direction: -1, gridlines: { color: '#b0b0b0' }, minorGridlines: { count: 4, color: '#e8e8e8' } })
+      .build()
+  );
+  console.log(`チャンネル内順位グラフを生成しました（${channelTitle}、${channelSheets.length} 動画）`);
 }
 
 // ==========================================
@@ -1279,7 +1295,7 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
 function sortVideoSheetsByPublishDate_(ss) {
   const sheets = ss.getSheets();
   const preserved = sheets.filter(s => CONFIG.PRESERVE_SHEET_NAMES.includes(s.getName()));
-  const videoSheets = sheets.filter(s => !CONFIG.PRESERVE_SHEET_NAMES.includes(s.getName()));
+  const videoSheets = sheets.filter(s => !CONFIG.PRESERVE_SHEET_NAMES.includes(s.getName()) && !s.getName().startsWith('_'));
 
   videoSheets.sort((a, b) => {
     const dateA = a.getRange('A2').getValue();
