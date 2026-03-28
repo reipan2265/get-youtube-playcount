@@ -401,6 +401,10 @@ function getOrCreateVideoSheet_(ss, sheetName, fullTitle, publishedAt, channelId
       sheet.getRange('B2').setValue(channelId);
       sheet.getRange('C2').setValue(channelTitle || '');
     }
+    // 順位列が追加される前に作成されたシートはヘッダーを補完
+    if (!sheet.getRange('C3').getValue()) {
+      sheet.getRange('C3').setValue('順位').setBackground('#eeeeee');
+    }
     return sheet;
   }
 
