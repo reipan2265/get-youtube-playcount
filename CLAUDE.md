@@ -76,25 +76,39 @@ Chart operations (`insertChart`, `updateChart`) are the primary cause of timeout
 
 ### Key Files
 
-- `main.gs` — All logic (single file for GAS compatibility)
-- `appsscript.json` — GAS manifest (API scopes, runtime)
-- `package.json` — clasp deploy scripts
+| ファイル | 内容 |
+|---|---|
+| `config.gs` | `CONFIG` 定数・共通定数（`MS_PER_DAY` など）|
+| `main.gs` | エントリーポイント（`main`, `updateAllCharts`）のみ |
+| `youtube.gs` | YouTube API ラッパー・ランク計算 |
+| `video.gs` | 動画処理・シート操作・サンプリング・個別グラフ・成長曲線 |
+| `comparison.gs` | 比較シート生成・全グラフ（絶対時刻・経過日数・順位） |
+| `utils.gs` | 汎用ユーティリティ（フォーマット・計算・リトライ） |
+| `admin.gs` | 手動実行用管理関数・シート並び替え |
+| `appsscript.json` | GAS マニフェスト（API スコープ・ランタイム） |
+| `package.json` | clasp デプロイスクリプト・型定義依存 |
 
 ## Code Conventions
 
-- All logic lives in `main.gs` (GAS requires a single deployable file or flat structure)
-- Private helper functions use a trailing underscore (`fetchVideoData_`, `runSampling_`, etc.)
-- `CONFIG` at the top of `main.gs` is the only place users need to edit
-- `SpreadsheetApp.flush()` is called after heavy sheet operations to prevent buffering-related timeouts
-- `retryOnTimeout_()` wraps operations that are prone to transient GAS timeouts
+- GAS のグローバルスコープは全 `.gs` ファイルで共有されるため、ファイルをまたいだ関数呼び出しが可能
+- プライベートヘルパー関数はトレイリングアンダースコア（`fetchVideoData_`, `runSampling_` など）
+- `CONFIG` は `config.gs` の先頭にあり、ユーザーが編集する唯一の箇所
+- `SpreadsheetApp.flush()` は重いシート操作の後に呼び出してバッファリング関連のタイムアウトを防ぐ
+- `retryOnTimeout_()` はタイムアウトしやすい操作をラップする
 
 ## File Structure
 
 ```
-GetYoutubePlayCount/
+get-youtube-playcount/
 ├── CLAUDE.md           # This file
 ├── README.md           # User-facing documentation
-├── main.gs             # All GAS logic
+├── config.gs           # CONFIG・定数
+├── main.gs             # エントリーポイントのみ
+├── youtube.gs          # YouTube API ラッパー
+├── video.gs            # 動画処理・シート操作
+├── comparison.gs       # 比較シート・グラフ
+├── utils.gs            # ユーティリティ
+├── admin.gs            # 管理用関数
 ├── appsscript.json     # GAS manifest
 ├── jsconfig.json       # Editor type support
 ├── package.json        # clasp scripts + type dep
