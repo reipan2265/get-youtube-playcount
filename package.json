@@ -10,16 +10,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/reipan2265/GetYoutubePlayCount.git"
+    "url": "git+https://github.com/reipan2265/get-youtube-playcount.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/reipan2265/GetYoutubePlayCount/issues"
+    "url": "https://github.com/reipan2265/get-youtube-playcount/issues"
   },
-  "homepage": "https://github.com/reipan2265/GetYoutubePlayCount#readme",
+  "homepage": "https://github.com/reipan2265/get-youtube-playcount#readme",
   "devDependencies": {
     "@types/google-apps-script": "^2.0.8"
   }
