@@ -75,7 +75,16 @@ function main() {
   // 全動画の詳細を一括取得
   const videoDataMap = fetchAllVideoData_(videoIds);
   // チャンネル内順位は12時間に1回だけ算出（API負荷軽減）
-  const rankMap      = shouldUpdateRank_() ? computeChannelRankMap_(videoDataMap) : {};
+  // タイムスタンプは計算成功後に記録（失敗時は次回リトライさせる）
+  let rankMap = {};
+  if (shouldUpdateRank_()) {
+    rankMap = computeChannelRankMap_(videoDataMap);
+    if (Object.keys(rankMap).length > 0) {
+      PropertiesService.getScriptProperties().setProperty('last_rank_update', String(Date.now()));
+    } else {
+      console.warn('順位計算結果が空のためタイムスタンプを更新しません（次回リトライ）');
+    }
+  }
 
   videoIds.forEach((id, index) => {
     const sheetName = processVideo_(ss, id, index, videoIds.length, now, rankMap[id] ?? null, videoDataMap[id] ?? null);
@@ -347,11 +356,19 @@ function shouldUpdateRank_() {
   const props = PropertiesService.getScriptProperties();
   const last  = Number(props.getProperty('last_rank_update') || '0');
   if (Date.now() - last >= INTERVAL_MS) {
-    props.setProperty('last_rank_update', String(Date.now()));
     return true;
   }
   console.log('チャンネル内ランク: 前回更新から 12 時間未満のためスキップ');
   return false;
+}
+
+/**
+ * チャンネル内ランクの更新タイマーをリセットする。
+ * 次回の main() 実行時に強制的に順位を再計算させたい場合に手動で実行する。
+ */
+function resetRankTimer() {
+  PropertiesService.getScriptProperties().deleteProperty('last_rank_update');
+  console.log('ランク更新タイマーをリセットしました。次回の main() 実行時に順位を再計算します。');
 }
 
 /**
