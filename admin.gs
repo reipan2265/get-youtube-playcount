@@ -17,6 +17,7 @@ function clearRankCache() {
 /** clearRankCache() の旧名エイリアス。 */
 function resetRankTimer() { clearRankCache(); }
 
+
 /**
  * 動画シートをすべて削除してリセットする（PRESERVE_SHEET_NAMES は保持）。
  * 同時に成長曲線補完の実行済みフラグも削除する。
