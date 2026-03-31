@@ -348,45 +348,93 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
 }
 
 /**
- * 「チャンネル内順位」シートに今回の順位計算結果を記録する。
- * 圧縮（runSampling_）に依存しない独立したシートで順位履歴を保持する。
+ * Script Properties から「チャンネル内順位」シートの列マッピングを読み込む。
+ * @returns {Object<string, number>}  { videoId: colIndex (1-based) }
+ */
+function getRankSheetColMap_() {
+  const raw = PropertiesService.getScriptProperties().getProperty('rank_sheet_col_map');
+  return raw ? JSON.parse(raw) : {};
+}
+
+/**
+ * 「チャンネル内順位」シートの列マッピングを Script Properties に保存する。
+ * @param {Object<string, number>} colMap
+ */
+function saveRankSheetColMap_(colMap) {
+  PropertiesService.getScriptProperties().setProperty('rank_sheet_col_map', JSON.stringify(colMap));
+}
+
+/**
+ * 「チャンネル内順位」シートに順位を記録する（ピボット形式）。
+ *
+ * レイアウト:
+ *   行1（ヘッダー）: 日時 | 動画タイトルA | 動画タイトルB | ...
+ *   行2以降（新しい順）: タイムスタンプ | 順位A | 順位B | ...
+ *
+ * 動画が追加されると右端に列を追加し、列マッピングを Script Properties で永続化する。
+ * 旧フォーマット（フラット追記型）のシートが存在する場合はクリアして作り直す。
+ *
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
- * @param {Object<string, number>}  rankMap       { videoId: rank }
- * @param {Object<string, {title: string, channelTitle: string}>} metaMap  保存済みメタ情報
- * @param {Object<string, number>}  viewCountMap  { videoId: viewCount }（チャンネル取得時の再生数）
+ * @param {Object<string, number>}  rankMap   { videoId: rank }
+ * @param {Object<string, {title: string, channelTitle: string}>} metaMap
  * @param {Date} now
  */
-function updateRankHistorySheet_(ss, rankMap, metaMap, viewCountMap, now) {
+function updateRankHistorySheet_(ss, rankMap, metaMap, now) {
   if (Object.keys(rankMap).length === 0) return;
 
   let sheet = ss.getSheetByName(CONFIG.RANK_SHEET_NAME);
+
+  // 旧フォーマット（B1 = '動画タイトル'）のシートはクリアして再作成
+  if (sheet && sheet.getRange('B1').getValue() === '動画タイトル') {
+    sheet.clearContents();
+    sheet.clearFormats();
+    saveRankSheetColMap_({});
+    console.log(`${CONFIG.RANK_SHEET_NAME}: 旧フォーマットを検出、クリアして再構築します`);
+  }
+
   if (!sheet) {
     sheet = ss.insertSheet(CONFIG.RANK_SHEET_NAME);
-    sheet.getRange('A1:E1')
-      .setValues([['日時', '動画タイトル', 'チャンネル', '再生数', '順位']])
-      .setBackground('#eeeeee')
-      .setFontWeight('bold');
-    sheet.setFrozenRows(1);
-    sheet.setColumnWidth(1, 160);
-    sheet.setColumnWidth(2, 400);
-    sheet.setColumnWidth(3, 200);
     console.log(`シートを作成: ${CONFIG.RANK_SHEET_NAME}`);
   }
 
-  const rows = Object.entries(rankMap)
-    .filter(([, rank]) => rank != null)
-    .sort(([, a], [, b]) => a - b) // 順位昇順
-    .map(([id, rank]) => {
-      const meta  = metaMap[id] || {};
-      const title = meta.title        || id;
-      const ch    = meta.channelTitle || '';
-      const views = viewCountMap[id]  ?? '';
-      return [now, title, ch, views, rank];
-    });
+  // ヘッダー行が未設定なら「日時」を書き込む
+  if (!sheet.getRange('A1').getValue()) {
+    sheet.getRange('A1').setValue('日時').setBackground('#eeeeee').setFontWeight('bold');
+    sheet.setFrozenRows(1);
+    sheet.setColumnWidth(1, 160);
+  }
 
-  if (rows.length === 0) return;
+  // 列マッピングを読み込み、新動画があれば列を追加
+  let colMap     = getRankSheetColMap_();
+  let mapChanged = false;
 
-  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 5).setValues(rows);
-  sheet.getRange(2, 4, sheet.getLastRow() - 1, 1).setNumberFormat('#,##0');
-  console.log(`チャンネル内順位シートに ${rows.length} 件記録`);
+  // 初回登録時は現在の順位昇順でカラムを並べる
+  const sortedIds = Object.keys(rankMap).sort((a, b) => (rankMap[a] ?? Infinity) - (rankMap[b] ?? Infinity));
+
+  sortedIds.forEach(id => {
+    if (colMap[id]) return;
+    const newCol = sheet.getLastColumn() + 1;
+    const title  = metaMap[id]?.title || id;
+    sheet.getRange(1, newCol).setValue(title).setBackground('#eeeeee').setFontWeight('bold');
+    sheet.setColumnWidth(newCol, 250);
+    colMap[id]  = newCol;
+    mapChanged  = true;
+  });
+
+  if (mapChanged) saveRankSheetColMap_(colMap);
+
+  // データ行を組み立てて先頭（行2）に挿入（新しいデータが上に来る）
+  const totalCols = sheet.getLastColumn();
+  const rowData   = new Array(totalCols).fill('');
+  rowData[0]      = now;
+  Object.entries(rankMap).forEach(([id, rank]) => {
+    if (colMap[id] && rank != null) rowData[colMap[id] - 1] = rank;
+  });
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow >= 1) sheet.insertRowAfter(1);
+  sheet.getRange(2, 1, 1, totalCols).setValues([rowData]);
+  sheet.getRange(2, 1).setNumberFormat('yyyy/MM/dd HH:mm');
+
+  console.log(`チャンネル内順位シートに記録: ${now}`);
 }

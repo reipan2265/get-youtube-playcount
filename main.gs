@@ -73,7 +73,7 @@ function updateChannelRanks_(ss, now) {
   const videoIds      = collectVideoIds_();
   const channelGroups = buildChannelGroups_(metaMap, videoIds);
 
-  const { rankMap, viewCountMap } = computeRanksByChannelGroups_(channelGroups);
+  const { rankMap } = computeRanksByChannelGroups_(channelGroups);
   if (Object.keys(rankMap).length === 0) {
     console.warn('順位計算結果が空でした（次回リトライ）。');
     return;
@@ -81,7 +81,7 @@ function updateChannelRanks_(ss, now) {
 
   saveRankMapToProps_(rankMap);
   PropertiesService.getScriptProperties().setProperty('last_rank_update', String(Date.now()));
-  updateRankHistorySheet_(ss, rankMap, metaMap, viewCountMap, now);
+  updateRankHistorySheet_(ss, rankMap, metaMap, now);
   console.log('チャンネル内順位の更新完了。');
 }
 
