@@ -14,8 +14,11 @@ const CONFIG = {
   // 全動画比較シートのシート名
   COMP_SHEET_NAME: '再生数比較',
 
+  // チャンネル内順位履歴シートのシート名
+  RANK_SHEET_NAME: 'チャンネル内順位',
+
   // 削除・リセット対象から除外するシート名
-  PRESERVE_SHEET_NAMES: ['再生数比較', 'シート1', '_abs_helper', '_elapsed_helper', '_rank_helper'],
+  PRESERVE_SHEET_NAMES: ['再生数比較', 'チャンネル内順位', 'シート1', '_abs_helper', '_elapsed_helper', '_rank_helper'],
 
   // 比較グラフのサイズ（ピクセル）
   CHART: {

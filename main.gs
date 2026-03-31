@@ -29,6 +29,7 @@ function main() {
     rankMap = computeChannelRankMap_(videoDataMap);
     if (Object.keys(rankMap).length > 0) {
       PropertiesService.getScriptProperties().setProperty('last_rank_update', String(Date.now()));
+      updateRankHistorySheet_(ss, rankMap, videoDataMap, now);
     } else {
       console.warn('順位計算結果が空のためタイムスタンプを更新しません（次回リトライ）');
     }
