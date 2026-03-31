@@ -88,11 +88,21 @@ function updateChannelRanks_(ss, now) {
 /**
  * グラフ・比較シート・シート並び替えを更新する。
  * main() とは別トリガー（例: 6時間ごと）で実行することで実行時間超過を回避する。
+ *
+ * 実行順序：比較シート更新を先に行い、タイムアウトしても必ず反映されるようにする。
+ * 個別グラフ更新は後回し（タイムアウトしても比較グラフへの影響なし）。
  */
 function updateAllCharts() {
   console.log('グラフ・比較シート更新を開始します...');
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
+  // ① 比較シートを先に更新（最重要）
+  console.log('比較シートを更新します...');
+  updateComparisonSheet_(ss);
+  sortVideoSheetsByPublishDate_(ss);
+
+  // ② 個別グラフ更新（後回し・タイムアウトしても比較シートには影響しない）
+  console.log('個別グラフを更新します...');
   const preserveSet = new Set(CONFIG.PRESERVE_SHEET_NAMES);
   ss.getSheets()
     .filter(sh => !preserveSet.has(sh.getName()) && !sh.getName().startsWith('_'))
@@ -101,8 +111,5 @@ function updateAllCharts() {
       SpreadsheetApp.flush();
     });
 
-  console.log('比較シートを更新します...');
-  updateComparisonSheet_(ss);
-  sortVideoSheetsByPublishDate_(ss);
   console.log('完了。');
 }
