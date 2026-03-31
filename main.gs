@@ -4,7 +4,7 @@
 
 /**
  * トリガーから呼び出すメイン処理（毎時）。
- * 全動画の再生数を取得・記録する。順位計算は updateChannelRanks() に分離。
+ * 再生数を取得・記録し、12時間ごとに updateChannelRanks_() を呼び出す。
  */
 function main() {
   console.log('再生数取得を開始します...');
@@ -22,10 +22,15 @@ function main() {
 
   const videoDataMap = fetchAllVideoData_(videoIds);
 
-  // 動画メタ情報（channelId等）を保存して updateChannelRanks() で再利用できるようにする
+  // 動画メタ情報（channelId等）を保存（updateChannelRanks_() で再利用）
   saveVideoMetadataToProps_(videoDataMap);
 
-  // updateChannelRanks() が保存した最新の rankMap を読み込んで動画シートのC列に書き込む
+  // 12時間ごとに順位を更新する
+  if (shouldUpdateRank_()) {
+    updateChannelRanks_(ss, now);
+  }
+
+  // 最新の rankMap を読み込んで動画シートのC列に書き込む
   const rankMap = loadRankMapFromProps_();
 
   videoIds.forEach((id, index) => {
@@ -40,11 +45,23 @@ function main() {
 }
 
 /**
- * チャンネル内順位を更新する（1日2回トリガー推奨）。
- * main() とは独立して実行し、チャンネル全動画を1回だけ取得して順位を算出する。
- * 結果は Script Properties と「チャンネル内順位」シートに保存する。
+ * チャンネル内順位を計算して「チャンネル内順位」シートに記録する。
+ * main() から 12 時間ごとに呼び出される。手動実行も可能。
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
+ * @param {Date} [now]
  */
-function updateChannelRanks() {
+function updateChannelRanks(ss, now) {
+  updateChannelRanks_(
+    ss  ?? SpreadsheetApp.getActiveSpreadsheet(),
+    now ?? (() => { const d = new Date(); d.setMinutes(0, 0, 0); return d; })(),
+  );
+}
+
+/**
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * @param {Date} now
+ */
+function updateChannelRanks_(ss, now) {
   console.log('チャンネル内順位の更新を開始します...');
 
   const metaMap = loadVideoMetadataFromProps_();
@@ -53,20 +70,17 @@ function updateChannelRanks() {
     return;
   }
 
-  const ss      = SpreadsheetApp.getActiveSpreadsheet();
-  const now     = new Date();
-  now.setMinutes(0, 0, 0);
-
   const videoIds      = collectVideoIds_();
   const channelGroups = buildChannelGroups_(metaMap, videoIds);
 
   const { rankMap, viewCountMap } = computeRanksByChannelGroups_(channelGroups);
   if (Object.keys(rankMap).length === 0) {
-    console.warn('順位計算結果が空でした。');
+    console.warn('順位計算結果が空でした（次回リトライ）。');
     return;
   }
 
   saveRankMapToProps_(rankMap);
+  PropertiesService.getScriptProperties().setProperty('last_rank_update', String(Date.now()));
   updateRankHistorySheet_(ss, rankMap, metaMap, viewCountMap, now);
   console.log('チャンネル内順位の更新完了。');
 }

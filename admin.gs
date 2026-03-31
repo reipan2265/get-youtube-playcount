@@ -10,7 +10,8 @@ function clearRankCache() {
   const props = PropertiesService.getScriptProperties();
   props.deleteProperty('video_metadata');
   props.deleteProperty('rank_map');
-  console.log('ランクキャッシュ（video_metadata / rank_map）を削除しました。');
+  props.deleteProperty('last_rank_update');
+  console.log('ランクキャッシュ（video_metadata / rank_map / last_rank_update）を削除しました。');
 }
 
 /**

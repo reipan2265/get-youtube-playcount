@@ -224,6 +224,19 @@ function collectVideoIds_() {
 }
 
 /**
+ * チャンネル内ランクを今回更新すべきか判定する。
+ * 前回更新から 12 時間未満の場合は false を返してスキップする。
+ * @returns {boolean}
+ */
+function shouldUpdateRank_() {
+  const INTERVAL_MS = 12 * 60 * 60 * 1000;
+  const last = Number(PropertiesService.getScriptProperties().getProperty('last_rank_update') || '0');
+  if (Date.now() - last >= INTERVAL_MS) return true;
+  console.log('チャンネル内ランク: 前回更新から 12 時間未満のためスキップ');
+  return false;
+}
+
+/**
  * WATCH_ONLY_VIDEO_IDS の動画IDから対応するシート名を解決する。
  * rebuildComparisonSheet など main() 経由でない呼び出し用。
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
