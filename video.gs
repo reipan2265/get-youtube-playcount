@@ -346,3 +346,47 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
   PropertiesService.getScriptProperties().setProperty(propKey, 'true');
   console.log(`成長曲線を補完 [${sheet.getName()}]: ${newRows.length} 点追加 (alpha=${alpha.toFixed(2)})`);
 }
+
+/**
+ * 「チャンネル内順位」シートに今回の順位計算結果を記録する。
+ * 圧縮（runSampling_）に依存しない独立したシートで順位履歴を保持する。
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * @param {Object<string, number>}  rankMap       { videoId: rank }
+ * @param {Object<string, {title: string, channelTitle: string}>} metaMap  保存済みメタ情報
+ * @param {Object<string, number>}  viewCountMap  { videoId: viewCount }（チャンネル取得時の再生数）
+ * @param {Date} now
+ */
+function updateRankHistorySheet_(ss, rankMap, metaMap, viewCountMap, now) {
+  if (Object.keys(rankMap).length === 0) return;
+
+  let sheet = ss.getSheetByName(CONFIG.RANK_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.RANK_SHEET_NAME);
+    sheet.getRange('A1:E1')
+      .setValues([['日時', '動画タイトル', 'チャンネル', '再生数', '順位']])
+      .setBackground('#eeeeee')
+      .setFontWeight('bold');
+    sheet.setFrozenRows(1);
+    sheet.setColumnWidth(1, 160);
+    sheet.setColumnWidth(2, 400);
+    sheet.setColumnWidth(3, 200);
+    console.log(`シートを作成: ${CONFIG.RANK_SHEET_NAME}`);
+  }
+
+  const rows = Object.entries(rankMap)
+    .filter(([, rank]) => rank != null)
+    .sort(([, a], [, b]) => a - b) // 順位昇順
+    .map(([id, rank]) => {
+      const meta  = metaMap[id] || {};
+      const title = meta.title        || id;
+      const ch    = meta.channelTitle || '';
+      const views = viewCountMap[id]  ?? '';
+      return [now, title, ch, views, rank];
+    });
+
+  if (rows.length === 0) return;
+
+  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 5).setValues(rows);
+  sheet.getRange(2, 4, sheet.getLastRow() - 1, 1).setNumberFormat('#,##0');
+  console.log(`チャンネル内順位シートに ${rows.length} 件記録`);
+}

@@ -3,6 +3,18 @@
 // ==========================================
 
 /**
+ * updateChannelRanks() のキャッシュ（動画メタ情報・順位マップ）を削除する。
+ * 次回 main() 実行時にメタ情報が再保存され、次回 updateChannelRanks() で順位が再計算される。
+ */
+function clearRankCache() {
+  const props = PropertiesService.getScriptProperties();
+  props.deleteProperty('video_metadata');
+  props.deleteProperty('rank_map');
+  props.deleteProperty('last_rank_update');
+  console.log('ランクキャッシュ（video_metadata / rank_map / last_rank_update）を削除しました。');
+}
+
+/**
  * 動画シートをすべて削除してリセットする（PRESERVE_SHEET_NAMES は保持）。
  * 同時に成長曲線補完の実行済みフラグも削除する。
  * ⚠️ データが失われるため慎重に使用すること。
