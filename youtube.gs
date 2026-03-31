@@ -93,20 +93,75 @@ function fetchViewCountsOnly_(videoIds) {
 }
 
 /**
- * 追跡動画ごとに「チャンネル全動画の中での再生数順位」を返す。
- * チャンネルのアップロードプレイリストから全動画を取得し、再生数でランクを付与する。
+ * 動画メタ情報（channelId・タイトル等）を Script Properties に保存する。
+ * main() 実行後に updateChannelRanks() が API 呼び出し不要でチャンネルを特定できるようにする。
  * @param {Object<string, object>} videoDataMap  { videoId: YouTubeVideoItem }
- * @returns {Object<string, number>}  { videoId: rank }
  */
-function computeChannelRankMap_(videoDataMap) {
-  const channelGroups = {}; // { channelId: [videoId, ...] }
+function saveVideoMetadataToProps_(videoDataMap) {
+  const meta = {};
   Object.entries(videoDataMap).forEach(([id, item]) => {
-    const cid = item.snippet.channelId;
-    if (!channelGroups[cid]) channelGroups[cid] = [];
-    channelGroups[cid].push(id);
+    meta[id] = {
+      channelId:    item.snippet.channelId,
+      title:        item.snippet.title,
+      channelTitle: item.snippet.channelTitle,
+    };
   });
+  PropertiesService.getScriptProperties().setProperty('video_metadata', JSON.stringify(meta));
+}
 
-  const rankMap = {};
+/**
+ * Script Properties から動画メタ情報を読み込む。
+ * @returns {Object<string, {channelId: string, title: string, channelTitle: string}>}
+ */
+function loadVideoMetadataFromProps_() {
+  const raw = PropertiesService.getScriptProperties().getProperty('video_metadata');
+  return raw ? JSON.parse(raw) : {};
+}
+
+/**
+ * 計算済み rankMap を Script Properties に保存する。
+ * main() が次回実行時に読み込み、動画シートの順位列に書き込む。
+ * @param {Object<string, number>} rankMap  { videoId: rank }
+ */
+function saveRankMapToProps_(rankMap) {
+  PropertiesService.getScriptProperties().setProperty('rank_map', JSON.stringify(rankMap));
+}
+
+/**
+ * Script Properties から最後に計算した rankMap を読み込む。
+ * @returns {Object<string, number>}
+ */
+function loadRankMapFromProps_() {
+  const raw = PropertiesService.getScriptProperties().getProperty('rank_map');
+  return raw ? JSON.parse(raw) : {};
+}
+
+/**
+ * 保存済みメタ情報と追跡動画 ID リストから、チャンネルID → 動画IDリスト のマップを返す。
+ * API 呼び出し不要。
+ * @param {Object<string, {channelId: string}>} metaMap
+ * @param {string[]} videoIds
+ * @returns {Object<string, string[]>}  { channelId: [videoId, ...] }
+ */
+function buildChannelGroups_(metaMap, videoIds) {
+  const groups = {};
+  videoIds.forEach(id => {
+    const cid = metaMap[id]?.channelId;
+    if (!cid) return;
+    if (!groups[cid]) groups[cid] = [];
+    groups[cid].push(id);
+  });
+  return groups;
+}
+
+/**
+ * チャンネルグループごとに全動画の再生数を1回だけ取得し、順位と再生数を返す。
+ * @param {Object<string, string[]>} channelGroups  { channelId: [trackedVideoId, ...] }
+ * @returns {{ rankMap: Object<string, number>, viewCountMap: Object<string, number> }}
+ */
+function computeRanksByChannelGroups_(channelGroups) {
+  const rankMap      = {};
+  const viewCountMap = {};
 
   Object.entries(channelGroups).forEach(([channelId, trackedIds]) => {
     console.log(`チャンネル ${channelId} の全動画を取得中...`);
@@ -120,14 +175,15 @@ function computeChannelRankMap_(videoDataMap) {
       .sort((a, b) => viewCounts[b] - viewCounts[a]);
 
     trackedIds.forEach(id => {
-      const idx = sorted.indexOf(id);
-      rankMap[id] = idx >= 0 ? idx + 1 : null;
+      const idx          = sorted.indexOf(id);
+      rankMap[id]        = idx >= 0 ? idx + 1 : null;
+      viewCountMap[id]   = viewCounts[id] ?? null;
     });
 
     console.log(`ランク算出完了: ${trackedIds.map(id => `${id}=${rankMap[id]}`).join(', ')}`);
   });
 
-  return rankMap;
+  return { rankMap, viewCountMap };
 }
 
 /**
@@ -165,31 +221,6 @@ function collectVideoIds_() {
   const playlistIds = fetchPlaylistVideoIds_();
   console.log(`プレイリストから ${playlistIds.length} 本を検出`);
   return [...new Set([...CONFIG.EXTRA_VIDEO_IDS, ...CONFIG.WATCH_ONLY_VIDEO_IDS, ...playlistIds])];
-}
-
-/**
- * チャンネル内ランクを今回更新すべきか判定する。
- * 前回更新から 12 時間未満の場合は false を返してスキップする。
- * @returns {boolean}
- */
-function shouldUpdateRank_() {
-  const INTERVAL_MS = 12 * 60 * 60 * 1000;
-  const props = PropertiesService.getScriptProperties();
-  const last  = Number(props.getProperty('last_rank_update') || '0');
-  if (Date.now() - last >= INTERVAL_MS) {
-    return true;
-  }
-  console.log('チャンネル内ランク: 前回更新から 12 時間未満のためスキップ');
-  return false;
-}
-
-/**
- * チャンネル内ランクの更新タイマーをリセットする。
- * 次回の main() 実行時に強制的に順位を再計算させたい場合に手動で実行する。
- */
-function resetRankTimer() {
-  PropertiesService.getScriptProperties().deleteProperty('last_rank_update');
-  console.log('ランク更新タイマーをリセットしました。次回の main() 実行時に順位を再計算します。');
 }
 
 /**

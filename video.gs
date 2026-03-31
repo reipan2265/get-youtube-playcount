@@ -352,10 +352,11 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
  * 圧縮（runSampling_）に依存しない独立したシートで順位履歴を保持する。
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
  * @param {Object<string, number>}  rankMap       { videoId: rank }
- * @param {Object<string, object>}  videoDataMap  { videoId: YouTubeVideoItem }
+ * @param {Object<string, {title: string, channelTitle: string}>} metaMap  保存済みメタ情報
+ * @param {Object<string, number>}  viewCountMap  { videoId: viewCount }（チャンネル取得時の再生数）
  * @param {Date} now
  */
-function updateRankHistorySheet_(ss, rankMap, videoDataMap, now) {
+function updateRankHistorySheet_(ss, rankMap, metaMap, viewCountMap, now) {
   if (Object.keys(rankMap).length === 0) return;
 
   let sheet = ss.getSheetByName(CONFIG.RANK_SHEET_NAME);
@@ -376,10 +377,10 @@ function updateRankHistorySheet_(ss, rankMap, videoDataMap, now) {
     .filter(([, rank]) => rank != null)
     .sort(([, a], [, b]) => a - b) // 順位昇順
     .map(([id, rank]) => {
-      const item  = videoDataMap[id];
-      const title = item ? item.snippet.title : id;
-      const ch    = item ? item.snippet.channelTitle : '';
-      const views = item ? Number(item.statistics.viewCount) : '';
+      const meta  = metaMap[id] || {};
+      const title = meta.title        || id;
+      const ch    = meta.channelTitle || '';
+      const views = viewCountMap[id]  ?? '';
       return [now, title, ch, views, rank];
     });
 

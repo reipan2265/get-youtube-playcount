@@ -3,8 +3,8 @@
 // ==========================================
 
 /**
- * トリガーから呼び出すメイン処理。
- * 全動画の再生数を取得・記録し、比較シートを更新する。
+ * トリガーから呼び出すメイン処理（毎時）。
+ * 全動画の再生数を取得・記録する。順位計算は updateChannelRanks() に分離。
  */
 function main() {
   console.log('再生数取得を開始します...');
@@ -15,25 +15,18 @@ function main() {
   const now = new Date();
   now.setMinutes(0, 0, 0);
 
-  const videoIds     = collectVideoIds_();
-  const watchOnlySet = new Set(CONFIG.WATCH_ONLY_VIDEO_IDS);
+  const videoIds      = collectVideoIds_();
+  const watchOnlySet  = new Set(CONFIG.WATCH_ONLY_VIDEO_IDS);
   const excludeSheets = new Set();
   console.log(`対象: ${videoIds.length} 本`);
 
   const videoDataMap = fetchAllVideoData_(videoIds);
 
-  // チャンネル内順位は12時間に1回だけ算出（API負荷軽減）
-  // タイムスタンプは計算成功後に記録（失敗時は次回リトライさせる）
-  let rankMap = {};
-  if (shouldUpdateRank_()) {
-    rankMap = computeChannelRankMap_(videoDataMap);
-    if (Object.keys(rankMap).length > 0) {
-      PropertiesService.getScriptProperties().setProperty('last_rank_update', String(Date.now()));
-      updateRankHistorySheet_(ss, rankMap, videoDataMap, now);
-    } else {
-      console.warn('順位計算結果が空のためタイムスタンプを更新しません（次回リトライ）');
-    }
-  }
+  // 動画メタ情報（channelId等）を保存して updateChannelRanks() で再利用できるようにする
+  saveVideoMetadataToProps_(videoDataMap);
+
+  // updateChannelRanks() が保存した最新の rankMap を読み込んで動画シートのC列に書き込む
+  const rankMap = loadRankMapFromProps_();
 
   videoIds.forEach((id, index) => {
     const sheetName = processVideo_(ss, id, index, videoIds.length, now, rankMap[id] ?? null, videoDataMap[id] ?? null);
@@ -44,6 +37,38 @@ function main() {
   // 比較シートのテーブルを更新（チャートは updateAllCharts() で別途更新）
   updateComparisonTableOnly_(ss, excludeSheets);
   console.log('データ更新完了。');
+}
+
+/**
+ * チャンネル内順位を更新する（1日2回トリガー推奨）。
+ * main() とは独立して実行し、チャンネル全動画を1回だけ取得して順位を算出する。
+ * 結果は Script Properties と「チャンネル内順位」シートに保存する。
+ */
+function updateChannelRanks() {
+  console.log('チャンネル内順位の更新を開始します...');
+
+  const metaMap = loadVideoMetadataFromProps_();
+  if (Object.keys(metaMap).length === 0) {
+    console.warn('動画メタデータが未保存です。先に main() を実行してください。');
+    return;
+  }
+
+  const ss      = SpreadsheetApp.getActiveSpreadsheet();
+  const now     = new Date();
+  now.setMinutes(0, 0, 0);
+
+  const videoIds      = collectVideoIds_();
+  const channelGroups = buildChannelGroups_(metaMap, videoIds);
+
+  const { rankMap, viewCountMap } = computeRanksByChannelGroups_(channelGroups);
+  if (Object.keys(rankMap).length === 0) {
+    console.warn('順位計算結果が空でした。');
+    return;
+  }
+
+  saveRankMapToProps_(rankMap);
+  updateRankHistorySheet_(ss, rankMap, metaMap, viewCountMap, now);
+  console.log('チャンネル内順位の更新完了。');
 }
 
 /**
