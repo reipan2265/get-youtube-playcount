@@ -11,7 +11,8 @@ function clearRankCache() {
   props.deleteProperty('video_metadata');
   props.deleteProperty('rank_map');
   props.deleteProperty('last_rank_update');
-  console.log('ランクキャッシュ（video_metadata / rank_map / last_rank_update）を削除しました。次回 main() 実行時に順位を再計算します。');
+  props.deleteProperty('rank_sheet_col_map');
+  console.log('ランクキャッシュ（video_metadata / rank_map / last_rank_update / rank_sheet_col_map）を削除しました。次回 main() 実行時に順位を再計算します。');
 }
 
 /** clearRankCache() の旧名エイリアス。 */
