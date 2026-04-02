@@ -101,7 +101,12 @@ function updateAllCharts() {
   updateComparisonSheet_(ss);
   sortVideoSheetsByPublishDate_(ss);
 
-  // ② 個別グラフ更新（後回し・タイムアウトしても比較シートには影響しない）
+  // ② 順位推移グラフを更新
+  console.log('順位推移グラフを更新します...');
+  updateRankHistoryChart_(ss);
+  SpreadsheetApp.flush();
+
+  // ③ 個別グラフ更新（後回し・タイムアウトしても比較シートには影響しない）
   console.log('個別グラフを更新します...');
   const preserveSet = new Set(CONFIG.PRESERVE_SHEET_NAMES);
   ss.getSheets()
