@@ -404,11 +404,12 @@ function removeNonMonotonicRows_(sheet) {
 }
 
 /**
- * 「チャンネル内順位」シートに順位推移の折れ線グラフを作成または更新する。
+ * 「チャンネル内順位」シートにチャンネルごとの順位推移グラフを作成する。
  *
- * - Y 軸反転（rank 1 = 最上位が視覚的に上に表示される）
- * - 凡例: 右側に各動画タイトルを表示
- * - グラフはシートのデータ末尾より下に配置する
+ * - 既存グラフをすべて削除して再作成（オプション継承の問題を回避）
+ * - チャンネルごとに1グラフ（行1のチャンネル名でグループ化）
+ * - Y 軸反転: 1位が上部に表示される
+ * - 凡例: 動画タイトルを右側に表示
  *
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
  */
@@ -418,32 +419,51 @@ function updateRankHistoryChart_(ss) {
 
   const lastRow = sheet.getLastRow();
   const lastCol = sheet.getLastColumn();
-  if (lastRow < 2 || lastCol < 2) return;
+  if (lastRow < 3 || lastCol < 2) return; // 行1=チャンネル, 行2=タイトル, 行3+=データ
 
-  const dataRange = sheet.getRange(1, 1, lastRow, lastCol);
-  const charts    = sheet.getCharts();
+  // 既存グラフをすべて削除して再作成
+  sheet.getCharts().forEach(c => sheet.removeChart(c));
 
-  const builder = (charts.length > 0 ? charts[0].modify() : sheet.newChart())
-    .asLineChart()
-    .clearRanges()
-    .addRange(dataRange)
-    .setPosition(lastRow + 2, 1, 0, 0)
-    .setOption('title', 'チャンネル内順位の推移')
-    .setOption('legend', { position: 'right' })
-    .setOption('hAxis', { slantedText: true, slantedTextAngle: 45 })
-    .setOption('vAxis', { direction: -1, format: '#,##0', title: '順位' })
-    .setOption('pointSize', 3)
-    .setOption('lineWidth', 2)
-    .setOption('width', 1200)
-    .setOption('height', 600);
+  // 行1 (B1 以降) のチャンネル名を読み込んでグループ化
+  const row1 = sheet.getRange(1, 2, 1, lastCol - 1).getValues()[0];
+  const channelGroups = {}; // { channelTitle: [colIndex (1-based)...] }
+  row1.forEach((channelTitle, i) => {
+    const key = String(channelTitle || '_unknown');
+    if (!channelGroups[key]) channelGroups[key] = [];
+    channelGroups[key].push(i + 2); // 1-based (B列=2, C列=3, ...)
+  });
 
-  if (charts.length > 0) {
-    sheet.updateChart(builder.build());
-  } else {
+  const CHART_HEIGHT   = 600;
+  const ROW_HEIGHT_PX  = 21;
+  const headerDataRows = lastRow - 1; // 行2（タイトルヘッダー）〜lastRow の行数
+  let nextRow = lastRow + 2;
+
+  Object.entries(channelGroups).forEach(([channelTitle, cols]) => {
+    const builder = sheet.newChart()
+      .asLineChart()
+      .addRange(sheet.getRange(2, 1, headerDataRows, 1)); // 日時列（行2ヘッダー含む）
+
+    cols.forEach(col => {
+      builder.addRange(sheet.getRange(2, col, headerDataRows, 1));
+    });
+
+    builder
+      .setPosition(nextRow, 1, 0, 0)
+      .setOption('title', `チャンネル内順位の推移 — ${channelTitle}`)
+      .setOption('legend', { position: 'right', textStyle: { fontSize: 9 } })
+      .setOption('hAxis', { slantedText: true, slantedTextAngle: 45 })
+      .setOption('vAxis', { direction: -1, format: '#,##0', title: '順位（小さいほど上位）' })
+      .setOption('interpolateNulls', true)
+      .setOption('pointSize', 3)
+      .setOption('lineWidth', 2)
+      .setOption('width', 1200)
+      .setOption('height', CHART_HEIGHT);
+
     sheet.insertChart(builder.build());
-  }
+    nextRow += Math.ceil(CHART_HEIGHT / ROW_HEIGHT_PX) + 3;
+  });
 
-  console.log(`${CONFIG.RANK_SHEET_NAME}: グラフを更新しました`);
+  console.log(`${CONFIG.RANK_SHEET_NAME}: ${Object.keys(channelGroups).length} チャンネル分のグラフを更新しました`);
 }
 
 /**
@@ -467,11 +487,12 @@ function saveRankSheetColMap_(colMap) {
  * 「チャンネル内順位」シートに順位を記録する（ピボット形式）。
  *
  * レイアウト:
- *   行1（ヘッダー）: 日時 | 動画タイトルA | 動画タイトルB | ...
- *   行2以降（新しい順）: タイムスタンプ | 順位A | 順位B | ...
+ *   行1（チャンネル行）: チャンネル | チャンネル名A | チャンネル名A | チャンネル名B | ...
+ *   行2（タイトル行）: 日時 | 動画タイトルA | 動画タイトルB | ...
+ *   行3以降（新しい順）: タイムスタンプ | 順位A | 順位B | ...
  *
- * 動画が追加されると右端に列を追加し、列マッピングを Script Properties で永続化する。
- * 旧フォーマット（フラット追記型）のシートが存在する場合はクリアして作り直す。
+ * 旧フォーマット（フラット追記型: B1='動画タイトル'、ピボット旧版: A1='日時'）は
+ * 自動検出してクリア・再構築する。
  *
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
  * @param {Object<string, number>}  rankMap   { videoId: rank }
@@ -483,12 +504,18 @@ function updateRankHistorySheet_(ss, rankMap, metaMap, now) {
 
   let sheet = ss.getSheetByName(CONFIG.RANK_SHEET_NAME);
 
-  // 旧フォーマット（B1 = '動画タイトル'）のシートはクリアして再作成
-  if (sheet && sheet.getRange('B1').getValue() === '動画タイトル') {
-    sheet.clearContents();
-    sheet.clearFormats();
-    saveRankSheetColMap_({});
-    console.log(`${CONFIG.RANK_SHEET_NAME}: 旧フォーマットを検出、クリアして再構築します`);
+  // 旧フォーマット検出 → クリアして再構築
+  // ① 旧フラット追記型: B1 = '動画タイトル'
+  // ② 旧ピボット（チャンネル行なし）: A1 = '日時'
+  if (sheet) {
+    const a1 = sheet.getRange('A1').getValue();
+    const b1 = sheet.getRange('B1').getValue();
+    if (b1 === '動画タイトル' || a1 === '日時') {
+      sheet.clearContents();
+      sheet.clearFormats();
+      saveRankSheetColMap_({});
+      console.log(`${CONFIG.RANK_SHEET_NAME}: 旧フォーマットを検出、クリアして再構築します`);
+    }
   }
 
   if (!sheet) {
@@ -496,10 +523,11 @@ function updateRankHistorySheet_(ss, rankMap, metaMap, now) {
     console.log(`シートを作成: ${CONFIG.RANK_SHEET_NAME}`);
   }
 
-  // ヘッダー行が未設定なら「日時」を書き込む
+  // 初期化: 行1=チャンネル行（水色）、行2=動画タイトル行（グレー）
   if (!sheet.getRange('A1').getValue()) {
-    sheet.getRange('A1').setValue('日時').setBackground('#eeeeee').setFontWeight('bold');
-    sheet.setFrozenRows(1);
+    sheet.getRange('A1').setValue('チャンネル').setBackground('#cfe2f3').setFontWeight('bold');
+    sheet.getRange('A2').setValue('日時').setBackground('#eeeeee').setFontWeight('bold');
+    sheet.setFrozenRows(2);
     sheet.setColumnWidth(1, 160);
   }
 
@@ -512,9 +540,11 @@ function updateRankHistorySheet_(ss, rankMap, metaMap, now) {
 
   sortedIds.forEach(id => {
     if (colMap[id]) return;
-    const newCol = sheet.getLastColumn() + 1;
-    const title  = metaMap[id]?.title || id;
-    sheet.getRange(1, newCol).setValue(title).setBackground('#eeeeee').setFontWeight('bold');
+    const newCol       = sheet.getLastColumn() + 1;
+    const title        = metaMap[id]?.title        || id;
+    const channelTitle = metaMap[id]?.channelTitle || '';
+    sheet.getRange(1, newCol).setValue(channelTitle).setBackground('#cfe2f3').setFontWeight('bold');
+    sheet.getRange(2, newCol).setValue(title).setBackground('#eeeeee').setFontWeight('bold');
     sheet.setColumnWidth(newCol, 250);
     colMap[id]  = newCol;
     mapChanged  = true;
@@ -522,7 +552,7 @@ function updateRankHistorySheet_(ss, rankMap, metaMap, now) {
 
   if (mapChanged) saveRankSheetColMap_(colMap);
 
-  // データ行を組み立てて先頭（行2）に挿入（新しいデータが上に来る）
+  // データ行を行2の直後（行3）に挿入（新しいデータが先頭に来る）
   const totalCols = sheet.getLastColumn();
   const rowData   = new Array(totalCols).fill('');
   rowData[0]      = now;
@@ -531,9 +561,12 @@ function updateRankHistorySheet_(ss, rankMap, metaMap, now) {
   });
 
   const lastRow = sheet.getLastRow();
-  if (lastRow >= 1) sheet.insertRowAfter(1);
-  sheet.getRange(2, 1, 1, totalCols).setValues([rowData]);
-  sheet.getRange(2, 1).setNumberFormat('yyyy/MM/dd HH:mm');
+  if (lastRow >= 2) sheet.insertRowAfter(2);
+  const dataRow = sheet.getRange(3, 1, 1, totalCols);
+  dataRow.setValues([rowData]);
+  // 行2（グレーヘッダー）の書式が継承されないよう明示的にリセット
+  dataRow.setBackground(null).setFontWeight('normal');
+  sheet.getRange(3, 1).setNumberFormat('yyyy/MM/dd HH:mm');
 
   console.log(`チャンネル内順位シートに記録: ${now}`);
 }

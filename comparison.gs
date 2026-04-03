@@ -63,6 +63,9 @@ function updateComparisonSheet_(ss, excludeSheets) {
   let nextChartRow = tableValues.length + 2;
 
   channelGroups.forEach(({ channelId, channelTitle, sheets }, idx) => {
+    // チャンネル内に動画が1本のみなら比較グラフ不要（各動画シートで推移確認可能）
+    if (sheets.length <= 1) return;
+
     const ch = aggregateVideoData_(sheets);
     if (ch.sortedTimestamps.length === 0) return;
 
