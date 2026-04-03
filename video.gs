@@ -404,6 +404,49 @@ function removeNonMonotonicRows_(sheet) {
 }
 
 /**
+ * 「チャンネル内順位」シートに順位推移の折れ線グラフを作成または更新する。
+ *
+ * - Y 軸反転（rank 1 = 最上位が視覚的に上に表示される）
+ * - 凡例: 右側に各動画タイトルを表示
+ * - グラフはシートのデータ末尾より下に配置する
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ */
+function updateRankHistoryChart_(ss) {
+  const sheet = ss.getSheetByName(CONFIG.RANK_SHEET_NAME);
+  if (!sheet) return;
+
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 2) return;
+
+  const dataRange = sheet.getRange(1, 1, lastRow, lastCol);
+  const charts    = sheet.getCharts();
+
+  const builder = (charts.length > 0 ? charts[0].modify() : sheet.newChart())
+    .asLineChart()
+    .clearRanges()
+    .addRange(dataRange)
+    .setPosition(lastRow + 2, 1, 0, 0)
+    .setOption('title', 'チャンネル内順位の推移')
+    .setOption('legend', { position: 'right' })
+    .setOption('hAxis', { slantedText: true, slantedTextAngle: 45 })
+    .setOption('vAxis', { direction: -1, format: '#,##0', title: '順位' })
+    .setOption('pointSize', 3)
+    .setOption('lineWidth', 2)
+    .setOption('width', 1200)
+    .setOption('height', 600);
+
+  if (charts.length > 0) {
+    sheet.updateChart(builder.build());
+  } else {
+    sheet.insertChart(builder.build());
+  }
+
+  console.log(`${CONFIG.RANK_SHEET_NAME}: グラフを更新しました`);
+}
+
+/**
  * Script Properties から「チャンネル内順位」シートの列マッピングを読み込む。
  * @returns {Object<string, number>}  { videoId: colIndex (1-based) }
  */

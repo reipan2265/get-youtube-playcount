@@ -86,10 +86,6 @@ function updateComparisonSheet_(ss, excludeSheets) {
     buildElapsedDaysChart_(compSheet, elapsedHelper, sheets, ch.publishDateMap, ch.elapsedMaps, nextChartRow, channelTitle);
     nextChartRow += Math.ceil(HEIGHT / 21) + 5;
 
-    // ③ チャンネル内順位推移
-    const rankHelper = getOrCreateHelperSheet_(ss, `_rank_${idx}`);
-    buildChannelRankChart_(compSheet, rankHelper, sheets, nextChartRow, channelTitle);
-    nextChartRow += Math.ceil(HEIGHT / 21) + 5;
   });
 }
 
@@ -394,73 +390,6 @@ function buildElapsedDaysChart_(compSheet, helperSheet, videoSheets, publishDate
 
   compSheet.insertChart(chart);
   console.log('経過日数グラフを生成しました');
-}
-
-/**
- * チャンネル内順位の推移グラフを生成する。
- * Y 軸は逆転（direction:-1）し、順位 1 がグラフ上部に表示される。
- * @param {GoogleAppsScript.Spreadsheet.Sheet} compSheet
- * @param {GoogleAppsScript.Spreadsheet.Sheet} rankHelperSheet
- * @param {GoogleAppsScript.Spreadsheet.Sheet[]} channelSheets
- * @param {number} startRow
- * @param {string} channelTitle
- */
-function buildChannelRankChart_(compSheet, rankHelperSheet, channelSheets, startRow, channelTitle) {
-  const { WIDTH, HEIGHT } = CONFIG.CHART;
-  const allTimestamps = new Set();
-  const rankDataMap   = {};
-
-  channelSheets.forEach(sh => {
-    const name    = sh.getName();
-    const lastRow = sh.getLastRow();
-    if (lastRow < 4) return;
-    sh.getRange(4, 1, lastRow - 3, 3).getValues().forEach(row => {
-      if (!(row[0] instanceof Date) || row[2] === '' || row[2] == null) return;
-      const ts = formatTimestamp_(row[0]);
-      allTimestamps.add(ts);
-      setNestedValue_(rankDataMap, ts, name, Number(row[2]));
-    });
-  });
-
-  if (allTimestamps.size === 0) {
-    console.log(`チャンネル ${channelTitle}: 順位データなしのためグラフをスキップ`);
-    return;
-  }
-
-  const sheetNames  = channelSheets.map(sh => sh.getName());
-  const sheetTitles = channelSheets.map(sh => sh.getRange('A1').getValue() || sh.getName());
-  const ascTs       = [...allTimestamps].sort();
-
-  const tableData = [
-    ['日時', ...sheetTitles],
-    ...ascTs.map(ts => [new Date(ts), ...sheetNames.map(n => rankDataMap[ts]?.[n] ?? null)]),
-  ];
-
-  const numRows = tableData.length;
-  const numCols = tableData[0].length;
-  if (rankHelperSheet.getMaxRows() < numRows) rankHelperSheet.insertRowsAfter(rankHelperSheet.getMaxRows(), numRows - rankHelperSheet.getMaxRows());
-  if (rankHelperSheet.getMaxColumns() < numCols) rankHelperSheet.insertColumnsAfter(rankHelperSheet.getMaxColumns(), numCols - rankHelperSheet.getMaxColumns());
-  rankHelperSheet.getRange(1, 1, numRows, numCols).setValues(tableData);
-
-  compSheet.insertChart(
-    compSheet.newChart()
-      .asLineChart()
-      .addRange(rankHelperSheet.getRange(1, 1, numRows, numCols))
-      .setNumHeaders(1)
-      .setPosition(startRow, 1, 0, 0)
-      .setOption('title', `チャンネル内順位推移 — ${channelTitle}（値が小さいほど上位）`)
-      .setOption('width', WIDTH)
-      .setOption('height', HEIGHT)
-      .setOption('interpolateNulls', true)
-      .setOption('pointSize', 2)
-      .setOption('lineWidth', 2)
-      .setOption('legend', { position: 'right', textStyle: { fontSize: 10 } })
-      .setOption('chartArea', { left: '6%', top: '10%', width: '65%', height: '75%' })
-      .setOption('hAxis', { slantedText: true, slantedTextAngle: 30, textStyle: { fontSize: 9 } })
-      .setOption('vAxis', { format: '#,##0', direction: -1, gridlines: { color: '#b0b0b0' }, minorGridlines: { count: 4, color: '#e8e8e8' } })
-      .build()
-  );
-  console.log(`チャンネル内順位グラフを生成しました（${channelTitle}、${channelSheets.length} 動画）`);
 }
 
 /**
