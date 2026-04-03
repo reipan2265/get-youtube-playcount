@@ -441,6 +441,7 @@ function updateRankHistoryChart_(ss) {
   Object.entries(channelGroups).forEach(([channelTitle, cols]) => {
     const builder = sheet.newChart()
       .asLineChart()
+      .setNumHeaders(1) // 行2をヘッダー（シリーズ名）として認識させる
       .addRange(sheet.getRange(2, 1, headerDataRows, 1)); // 日時列（行2ヘッダー含む）
 
     cols.forEach(col => {
