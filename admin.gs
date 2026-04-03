@@ -20,6 +20,26 @@ function resetRankTimer() { clearRankCache(); }
 
 
 /**
+ * 全動画シートの再生数非単調増加行（成長曲線の誤挿入等）を削除する。
+ * グラフがジグザグになっているシートを修正する際に手動実行する。
+ */
+function fixNonMonotonicData() {
+  console.log('非単調増加データのクリーンアップを開始します...');
+  const ss         = SpreadsheetApp.getActiveSpreadsheet();
+  const preserveSet = new Set(CONFIG.PRESERVE_SHEET_NAMES);
+  let totalRemoved = 0;
+
+  ss.getSheets()
+    .filter(sh => !preserveSet.has(sh.getName()) && !sh.getName().startsWith('_'))
+    .forEach(sh => {
+      totalRemoved += removeNonMonotonicRows_(sh);
+      SpreadsheetApp.flush();
+    });
+
+  console.log(`完了。合計 ${totalRemoved} 行を削除しました。`);
+}
+
+/**
  * 動画シートをすべて削除してリセットする（PRESERVE_SHEET_NAMES は保持）。
  * 同時に成長曲線補完の実行済みフラグも削除する。
  * ⚠️ データが失われるため慎重に使用すること。
