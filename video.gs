@@ -293,6 +293,17 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
   const dataCount = sheet.getLastRow() - 3;
   if (dataCount < 2) return; // 起点行 + 最低1計測が必要
 
+  // 降順ソート済みデータへの誤適用を防止:
+  // row4 > row5（新→古の順）なら、以前に実行済みだが propKey が失われた状態。
+  // この場合、row5〜7 は最新データであり補完に使うと全期間に誤値を挿入してしまうためスキップ。
+  const row4Date = sheet.getRange(4, 1).getValue();
+  const row5Date = sheet.getRange(5, 1).getValue();
+  if (row4Date instanceof Date && row5Date instanceof Date && row4Date > row5Date) {
+    PropertiesService.getScriptProperties().setProperty(propKey, 'recovered');
+    console.warn(`[${sheet.getName()}] 成長曲線: 降順ソート済みを検出 → 再実行をスキップ`);
+    return;
+  }
+
   const t0 = publishedAt.getTime();
 
   // 起点行(row4)直後の最大3計測点を読み込む（row5〜row7）
@@ -345,6 +356,51 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
   sheet.getRange(5, 1, newRows.length, 3).setValues(newRows);
   PropertiesService.getScriptProperties().setProperty(propKey, 'true');
   console.log(`成長曲線を補完 [${sheet.getName()}]: ${newRows.length} 点追加 (alpha=${alpha.toFixed(2)})`);
+}
+
+/**
+ * 再生数が単調増加でない行（成長曲線の誤挿入等）を1シートから削除する。
+ *
+ * 再生数は単調増加しかあり得ないため、昇順で並べたときに
+ * 直前行より再生数が小さい行は不正データとして除去する。
+ * 処理後はデータを降順に並び替えて書き戻す。
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @returns {number} 削除した行数
+ */
+function removeNonMonotonicRows_(sheet) {
+  const lastRow   = sheet.getLastRow();
+  const dataCount = lastRow - 3;
+  if (dataCount < 2) return 0;
+
+  const values = sheet.getRange(4, 1, dataCount, 3).getValues();
+
+  // 昇順ソートして単調増加チェック
+  const sorted = [...values].sort((a, b) => {
+    if (!(a[0] instanceof Date)) return 1;
+    if (!(b[0] instanceof Date)) return -1;
+    return a[0].getTime() - b[0].getTime();
+  });
+
+  let maxViewCount = -1;
+  const keepRows = sorted.filter(row => {
+    if (!(row[0] instanceof Date)) return false;
+    const v = row[1];
+    if (typeof v !== 'number' || v < maxViewCount) return false;
+    maxViewCount = v;
+    return true;
+  });
+
+  const removed = values.length - keepRows.length;
+  if (removed === 0) return 0;
+
+  console.log(`[${sheet.getName()}] 非単調行を削除: ${values.length} → ${keepRows.length} 行 (${removed} 件除去)`);
+
+  // 降順に並び直して書き戻す
+  keepRows.sort((a, b) => b[0].getTime() - a[0].getTime());
+  sheet.getRange(4, 1, dataCount, 3).clearContent();
+  sheet.getRange(4, 1, keepRows.length, 3).setValues(keepRows);
+  return removed;
 }
 
 /**
