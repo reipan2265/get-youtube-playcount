@@ -438,26 +438,20 @@ function updateRankHistoryChart_(ss) {
   const headerDataRows = lastRow - 1; // 行2（タイトルヘッダー）〜lastRow の行数
   let nextRow = lastRow + 2;
 
-  // 行2（動画タイトル行）を先読みしてシリーズ名に使う
-  const row2 = sheet.getRange(2, 1, 1, lastCol).getValues()[0];
-
   Object.entries(channelGroups).forEach(([channelTitle, cols]) => {
     const builder = sheet.newChart()
       .asLineChart()
+      .setNumHeaders(1) // 行2をヘッダー（シリーズ名）として認識させる
       .addRange(sheet.getRange(2, 1, headerDataRows, 1)); // 日時列（行2ヘッダー含む）
 
-    // 各動画列を追加し、動画タイトルをシリーズ名として明示設定
-    const seriesOptions = {};
-    cols.forEach((col, idx) => {
+    cols.forEach(col => {
       builder.addRange(sheet.getRange(2, col, headerDataRows, 1));
-      seriesOptions[idx] = { labelInLegend: String(row2[col - 1] || `動画${idx + 1}`) };
     });
 
     builder
       .setPosition(nextRow, 1, 0, 0)
       .setOption('title', `チャンネル内順位の推移 — ${channelTitle}`)
       .setOption('legend', { position: 'right', textStyle: { fontSize: 9 } })
-      .setOption('series', seriesOptions)
       .setOption('hAxis', { slantedText: true, slantedTextAngle: 45 })
       .setOption('vAxis', { direction: -1, format: '#,##0', title: '順位（小さいほど上位）' })
       .setOption('interpolateNulls', true)
