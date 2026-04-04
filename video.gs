@@ -532,27 +532,21 @@ function updateRankHistorySheet_(ss, rankMap, metaMap, now) {
     sheet.setColumnWidth(1, 160);
   }
 
-  // 列マッピングを読み込み、新動画があれば列を追加
-  let colMap     = getRankSheetColMap_();
+  // 列マッピングを常にシートの行2から再構築する（Script Propertiesキャッシュの不整合を防ぐ）
+  // 先頭列を優先して採用することで、clearRankCache後に追加された重複列を無視する
+  let colMap = {};
   let mapChanged = false;
-
-  // colMapが空でもシートに既存列がある場合、行2タイトルから復元する
-  // （clearRankCache() 後に既存データを活かしてデータ書き込みを継続するため）
-  if (Object.keys(colMap).length === 0 && sheet.getLastColumn() > 1) {
-    const existingLastCol = sheet.getLastColumn();
+  const existingLastCol = sheet.getLastColumn();
+  if (existingLastCol > 1) {
     const titleToId = {};
     Object.entries(metaMap).forEach(([id, meta]) => {
       if (meta.title) titleToId[meta.title] = id;
     });
-    const row2 = sheet.getRange(2, 2, 1, existingLastCol - 1).getValues()[0];
-    row2.forEach((title, i) => {
+    const row2vals = sheet.getRange(2, 2, 1, existingLastCol - 1).getValues()[0];
+    row2vals.forEach((title, i) => {
       const id = titleToId[String(title)];
-      if (id) colMap[id] = i + 2; // 1-based
+      if (id && !colMap[id]) colMap[id] = i + 2; // 先頭列を優先（重複列は無視）
     });
-    if (Object.keys(colMap).length > 0) {
-      saveRankSheetColMap_(colMap);
-      console.log(`${CONFIG.RANK_SHEET_NAME}: 列マッピングをシートから復元 (${Object.keys(colMap).length} 件)`);
-    }
   }
 
   // 初回登録時は現在の順位昇順でカラムを並べる
