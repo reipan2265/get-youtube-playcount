@@ -9,10 +9,9 @@
  * @param {number}      index           現在のインデックス（ログ用）
  * @param {number}      total           総件数（ログ用）
  * @param {Date}        now             実行日時
- * @param {number|null} rank            チャンネル内再生数順位（1が最多）
  * @param {object|null} preloadedVideo  fetchAllVideoData_ で取得済みの動画オブジェクト
  */
-function processVideo_(ss, id, index, total, now, rank, preloadedVideo) {
+function processVideo_(ss, id, index, total, now, preloadedVideo) {
   try {
     const video = preloadedVideo ?? fetchVideoData_(id);
     if (!video) {
@@ -35,8 +34,8 @@ function processVideo_(ss, id, index, total, now, rank, preloadedVideo) {
       }
     }
 
-    sheet.appendRow([now, viewCount, rank ?? '']);
-    console.log(`[${index + 1}/${total}] ${sheetName}: ${viewCount.toLocaleString()} 回 (順位: ${rank ?? '?'})`);
+    sheet.appendRow([now, viewCount]);
+    console.log(`[${index + 1}/${total}] ${sheetName}: ${viewCount.toLocaleString()} 回`);
 
     fillInitialGrowthCurve_(sheet, publishedAt);
     runSampling_(sheet, publishedAt);
@@ -96,10 +95,6 @@ function getOrCreateVideoSheet_(ss, sheetName, fullTitle, publishedAt, channelId
       sheet.getRange('B2').setValue(channelId);
       sheet.getRange('C2').setValue(channelTitle || '');
     }
-    // 順位列が追加される前に作成されたシートはヘッダーを補完
-    if (!sheet.getRange('C3').getValue()) {
-      sheet.getRange('C3').setValue('順位').setBackground('#eeeeee');
-    }
     return sheet;
   }
 
@@ -110,9 +105,9 @@ function getOrCreateVideoSheet_(ss, sheetName, fullTitle, publishedAt, channelId
   sheet.getRange('A2').setValue(publishedAt);
   sheet.getRange('B2').setValue(channelId   || '');
   sheet.getRange('C2').setValue(channelTitle || '');
-  sheet.getRange('A3:C3').setValues([['日時', '再生数', '順位']]).setBackground('#eeeeee');
+  sheet.getRange('A3:B3').setValues([['日時', '再生数']]).setBackground('#eeeeee');
   sheet.setFrozenRows(3);
-  sheet.appendRow([publishedAt, 0, '']); // 投稿日時点の起点レコード（再生数 = 0、順位は未計測）
+  sheet.appendRow([publishedAt, 0]); // 投稿日時点の起点レコード（再生数 = 0）
 
   return sheet;
 }
@@ -125,7 +120,7 @@ function getOrCreateVideoSheet_(ss, sheetName, fullTitle, publishedAt, channelId
 function sortVideoSheetDescending_(sheet) {
   const lastRow = sheet.getLastRow();
   if (lastRow <= 4) return;
-  sheet.getRange(4, 1, lastRow - 3, 3).sort({ column: 1, ascending: false });
+  sheet.getRange(4, 1, lastRow - 3, 2).sort({ column: 1, ascending: false });
 }
 
 /**
@@ -157,7 +152,7 @@ function runSampling_(sheet, publishedAt) {
   const dataCount = sheet.getLastRow() - 3;
   if (dataCount < CONFIG.SAMPLING.MIN_ROWS_TO_SAMPLE) return;
 
-  const values     = sheet.getRange(4, 1, dataCount, 3).getValues();
+  const values     = sheet.getRange(4, 1, dataCount, 2).getValues();
   const seenBucket = new Set();
 
   const keepRows = values.filter((row, index) => {
@@ -184,8 +179,8 @@ function runSampling_(sheet, publishedAt) {
 
   if (keepRows.length < values.length) {
     console.log(`間引き [${sheet.getName()}]: ${values.length} → ${keepRows.length} 行`);
-    sheet.getRange(4, 1, sheet.getLastRow() - 3, 3).clearContent();
-    sheet.getRange(4, 1, keepRows.length, 3).setValues(keepRows);
+    sheet.getRange(4, 1, sheet.getLastRow() - 3, 2).clearContent();
+    sheet.getRange(4, 1, keepRows.length, 2).setValues(keepRows);
   }
 }
 
@@ -348,12 +343,12 @@ function fillInitialGrowthCurve_(sheet, publishedAt) {
     if (curMs >= t0 + d1) break;
     const v = Math.round(C * Math.pow(curMs - t0, alpha));
     if (v <= 0) continue;
-    newRows.push([new Date(curMs), v, '']); // 補間点は順位未計測
+    newRows.push([new Date(curMs), v]);
   }
   if (newRows.length === 0) return;
 
   sheet.insertRowsAfter(4, newRows.length);
-  sheet.getRange(5, 1, newRows.length, 3).setValues(newRows);
+  sheet.getRange(5, 1, newRows.length, 2).setValues(newRows);
   PropertiesService.getScriptProperties().setProperty(propKey, 'true');
   console.log(`成長曲線を補完 [${sheet.getName()}]: ${newRows.length} 点追加 (alpha=${alpha.toFixed(2)})`);
 }
@@ -373,7 +368,7 @@ function removeNonMonotonicRows_(sheet) {
   const dataCount = lastRow - 3;
   if (dataCount < 2) return 0;
 
-  const values = sheet.getRange(4, 1, dataCount, 3).getValues();
+  const values = sheet.getRange(4, 1, dataCount, 2).getValues();
 
   // 昇順ソートして単調増加チェック
   const sorted = [...values].sort((a, b) => {
@@ -398,8 +393,8 @@ function removeNonMonotonicRows_(sheet) {
 
   // 降順に並び直して書き戻す
   keepRows.sort((a, b) => b[0].getTime() - a[0].getTime());
-  sheet.getRange(4, 1, dataCount, 3).clearContent();
-  sheet.getRange(4, 1, keepRows.length, 3).setValues(keepRows);
+  sheet.getRange(4, 1, dataCount, 2).clearContent();
+  sheet.getRange(4, 1, keepRows.length, 2).setValues(keepRows);
   return removed;
 }
 
@@ -453,7 +448,9 @@ function updateRankHistoryChart_(ss) {
       .setOption('title', `チャンネル内順位の推移 — ${channelTitle}`)
       .setOption('legend', { position: 'right', textStyle: { fontSize: 9 } })
       .setOption('hAxis', { slantedText: true, slantedTextAngle: 45 })
-      .setOption('vAxis', { direction: -1, format: '#,##0', title: '順位（小さいほど上位）' })
+      .setOption('vAxis.direction', -1)
+      .setOption('vAxis.format', '#,##0')
+      .setOption('vAxis.title', '順位（1位が上）')
       .setOption('interpolateNulls', true)
       .setOption('pointSize', 3)
       .setOption('lineWidth', 2)

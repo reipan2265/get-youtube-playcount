@@ -30,11 +30,8 @@ function main() {
     updateChannelRanks_(ss, now);
   }
 
-  // 最新の rankMap を読み込んで動画シートのC列に書き込む
-  const rankMap = loadRankMapFromProps_();
-
   videoIds.forEach((id, index) => {
-    const sheetName = processVideo_(ss, id, index, videoIds.length, now, rankMap[id] ?? null, videoDataMap[id] ?? null);
+    const sheetName = processVideo_(ss, id, index, videoIds.length, now, videoDataMap[id] ?? null);
     if (sheetName && watchOnlySet.has(id)) excludeSheets.add(sheetName);
     SpreadsheetApp.flush();
   });
