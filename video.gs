@@ -448,8 +448,7 @@ function updateRankHistoryChart_(ss) {
       .setOption('title', `チャンネル内順位の推移 — ${channelTitle}`)
       .setOption('legend', { position: 'right', textStyle: { fontSize: 9 } })
       .setOption('hAxis', { slantedText: true, slantedTextAngle: 45 })
-      .setOption('vAxis.direction', -1)
-      .setOption('vAxis.format', '#,##0')
+      .setOption('vAxis.format', '#,##0;#,##0;0') // 負値を正値として表示
       .setOption('vAxis.title', '順位（1位が上）')
       .setOption('interpolateNulls', true)
       .setOption('pointSize', 3)
@@ -567,8 +566,10 @@ function updateRankHistorySheet_(ss, rankMap, metaMap, now) {
   const totalCols = sheet.getLastColumn();
   const rowData   = new Array(totalCols).fill('');
   rowData[0]      = now;
+  // GAS の direction:-1 が LINE チャートで機能しないため、負値を格納して Y 軸を自然反転させる
+  // セルフォーマットで正値として表示し、チャート側でも符号なし書式を指定する
   Object.entries(rankMap).forEach(([id, rank]) => {
-    if (colMap[id] && rank != null) rowData[colMap[id] - 1] = rank;
+    if (colMap[id] && rank != null) rowData[colMap[id] - 1] = -rank;
   });
 
   const lastRow = sheet.getLastRow();
@@ -578,6 +579,10 @@ function updateRankHistorySheet_(ss, rankMap, metaMap, now) {
   // 行2（グレーヘッダー）の書式が継承されないよう明示的にリセット
   dataRow.setBackground(null).setFontWeight('normal');
   sheet.getRange(3, 1).setNumberFormat('yyyy/MM/dd HH:mm');
+  // 順位列（B列以降）は負値を正値として表示
+  if (totalCols >= 2) {
+    sheet.getRange(3, 2, 1, totalCols - 1).setNumberFormat('#,##0;#,##0;0');
+  }
 
   console.log(`チャンネル内順位シートに記録: ${now}`);
 }
