@@ -237,6 +237,19 @@ function shouldUpdateRank_() {
 }
 
 /**
+ * 比較グラフの最終更新から 24 時間以上経過していれば true を返す。
+ * updateAllCharts() トリガーが無効化された場合の main() フォールバック制御に使用する。
+ * @returns {boolean}
+ */
+function shouldUpdateComparisonChart_() {
+  const INTERVAL_MS = 24 * 60 * 60 * 1000;
+  const last = Number(PropertiesService.getScriptProperties().getProperty('last_comparison_update') || '0');
+  if (Date.now() - last >= INTERVAL_MS) return true;
+  console.log('比較グラフ: 前回更新から 24 時間未満のためスキップ');
+  return false;
+}
+
+/**
  * WATCH_ONLY_VIDEO_IDS の動画IDから対応するシート名を解決する。
  * rebuildComparisonSheet など main() 経由でない呼び出し用。
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss

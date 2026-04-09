@@ -38,6 +38,15 @@ function main() {
 
   // 比較シートのテーブルを更新（チャートは updateAllCharts() で別途更新）
   updateComparisonTableOnly_(ss, excludeSheets);
+
+  // updateAllCharts() トリガーが無効化された場合のフォールバック（24時間ごと）
+  // 比較グラフのヘルパーシートとチャートを再構築して陳腐化を防ぐ
+  if (shouldUpdateComparisonChart_()) {
+    console.log('比較グラフのフォールバック更新を開始します...');
+    updateComparisonSheet_(ss, excludeSheets);
+    console.log('比較グラフのフォールバック更新完了。');
+  }
+
   console.log('データ更新完了。');
 }
 
