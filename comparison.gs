@@ -40,7 +40,6 @@ function updateComparisonTableOnly_(ss, excludeSheets) {
  */
 function updateComparisonSheet_(ss, excludeSheets) {
   SpreadsheetApp.flush();
-  Utilities.sleep(2000);
 
   if (!excludeSheets) excludeSheets = resolveWatchOnlySheetNames_(ss);
 
@@ -90,6 +89,9 @@ function updateComparisonSheet_(ss, excludeSheets) {
     nextChartRow += Math.ceil(HEIGHT / 21) + 5;
 
   });
+
+  // 最終更新タイムスタンプを記録（main() からのフォールバック呼び出し制御用）
+  PropertiesService.getScriptProperties().setProperty('last_comparison_update', String(Date.now()));
 }
 
 /**
