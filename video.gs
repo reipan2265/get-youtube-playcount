@@ -221,6 +221,30 @@ function updateIndividualChart_(sheet) {
 }
 
 /**
+ * 順位データ（負値格納）から Y 軸の viewWindow を計算する。
+ *   上端: bestRank を 100 の倍数に切り捨て（例: rank 3 → 0, rank 150 → 100）
+ *   下端: worstRank を 10 の倍数に切り上げ（例: rank 25 → 30, rank 20 → 20）
+ * データが空なら { min: null, max: null } を返す（GAS 自動スケール）。
+ * @param {number[]} storedValues  シートに格納された負値の順位データ
+ * @returns {{ min: number|null, max: number|null }}
+ */
+function computeRankViewWindow_(storedValues) {
+  const valid = storedValues.filter(v => typeof v === 'number' && v < 0);
+  if (valid.length === 0) return { min: null, max: null };
+
+  const bestRank  = Math.round(-Math.max(...valid)); // max(-3,-25) = -3 → 3
+  const worstRank = Math.round(-Math.min(...valid)); // min(-3,-25) = -25 → 25
+
+  const topBoundaryRank    = Math.floor(bestRank  / 100) * 100; // 0 (rank 1-99)
+  const bottomBoundaryRank = Math.ceil (worstRank / 10)  * 10;  // 30 (rank 25)
+
+  return {
+    max: -topBoundaryRank,    // 0 → Y軸上端（1位が上に表示）
+    min: -bottomBoundaryRank, // -30 → Y軸下端
+  };
+}
+
+/**
  * 各動画シートにチャンネル内順位の推移グラフを作成または更新する。
  * 「チャンネル内順位」シートから該当列を参照してグラフを描画する。
  * 順位シートにデータがなければ何もしない。
@@ -246,6 +270,13 @@ function updateVideoRankChart_(ss, sheet) {
   const rankCol  = colOffset + 2; // 1-based (B列=2から)
   const dataRows = rankLastRow - 1; // 行2ヘッダー〜lastRow
 
+  // Y軸範囲を実データから計算（行3以降が実データ）
+  const dataRowCount = rankLastRow - 2;
+  const storedValues = dataRowCount > 0
+    ? rankSheet.getRange(3, rankCol, dataRowCount, 1).getValues().flat()
+    : [];
+  const { min: vMin, max: vMax } = computeRankViewWindow_(storedValues);
+
   // 順位グラフ: チャンネル内順位シートのデータを参照するグラフ
   const rankChart = sheet.getCharts().find(c =>
     c.getRanges().some(r => r.getSheet().getName() === CONFIG.RANK_SHEET_NAME)
@@ -268,6 +299,13 @@ function updateVideoRankChart_(ss, sheet) {
     .setOption('lineWidth', 2)
     .setOption('width', 600)
     .setOption('height', 370);
+
+  if (vMin !== null) {
+    builder
+      .setOption('vAxis.viewWindowMode', 'explicit')
+      .setOption('vAxis.viewWindow.min', vMin)
+      .setOption('vAxis.viewWindow.max', vMax);
+  }
 
   if (rankChart) {
     sheet.updateChart(builder.build());
@@ -494,7 +532,19 @@ function updateRankHistoryChart_(ss) {
   const headerDataRows = lastRow - 1; // 行2（タイトルヘッダー）〜lastRow の行数
   let nextRow = lastRow + 2;
 
+  // チャンネルグループごとのグラフを生成
+  const dataRowCount = lastRow - 2; // 行3以降が実データ
   Object.entries(channelGroups).forEach(([channelTitle, cols]) => {
+    // Y軸範囲をチャンネル内全動画のデータから計算
+    const storedValues = [];
+    if (dataRowCount > 0) {
+      cols.forEach(col => {
+        sheet.getRange(3, col, dataRowCount, 1).getValues()
+          .forEach(([v]) => { if (typeof v === 'number' && v < 0) storedValues.push(v); });
+      });
+    }
+    const { min: vMin, max: vMax } = computeRankViewWindow_(storedValues);
+
     const builder = sheet.newChart()
       .asLineChart()
       .setNumHeaders(1) // 行2をヘッダー（シリーズ名）として認識させる
@@ -516,6 +566,13 @@ function updateRankHistoryChart_(ss) {
       .setOption('lineWidth', 2)
       .setOption('width', 1200)
       .setOption('height', CHART_HEIGHT);
+
+    if (vMin !== null) {
+      builder
+        .setOption('vAxis.viewWindowMode', 'explicit')
+        .setOption('vAxis.viewWindow.min', vMin)
+        .setOption('vAxis.viewWindow.max', vMax);
+    }
 
     sheet.insertChart(builder.build());
     nextRow += Math.ceil(CHART_HEIGHT / ROW_HEIGHT_PX) + 3;
