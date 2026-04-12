@@ -235,7 +235,7 @@ function computeRankViewWindow_(storedValues) {
   const bestRank  = Math.round(-Math.max(...valid)); // max(-3,-25) = -3 → 3
   const worstRank = Math.round(-Math.min(...valid)); // min(-3,-25) = -25 → 25
 
-  const topBoundaryRank    = Math.floor(bestRank  / 100) * 100; // 0 (rank 1-99)
+  const topBoundaryRank    = Math.floor(bestRank  / 10)  * 10;  // 例: rank 3 → 0, rank 13 → 10
   const bottomBoundaryRank = Math.ceil (worstRank / 10)  * 10;  // 30 (rank 25)
 
   return {
