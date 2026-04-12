@@ -119,6 +119,7 @@ function updateAllCharts() {
     .filter(sh => !preserveSet.has(sh.getName()) && !sh.getName().startsWith('_'))
     .forEach(sh => {
       updateIndividualChart_(sh);
+      updateVideoRankChart_(ss, sh);
       SpreadsheetApp.flush();
     });
 

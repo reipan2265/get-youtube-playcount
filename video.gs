@@ -186,6 +186,7 @@ function runSampling_(sheet, publishedAt) {
 
 /**
  * 各動画シートに再生数推移の折れ線グラフを作成または更新する。
+ * 複数グラフが混在しても「このシートのデータのみ参照するグラフ」を再生数グラフと識別する。
  * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
  */
 function updateIndividualChart_(sheet) {
@@ -193,10 +194,14 @@ function updateIndividualChart_(sheet) {
   if (lastRow < 4) return;
 
   const dataRange = sheet.getRange(`A3:B${lastRow}`);
-  const charts    = sheet.getCharts();
   const title     = sheet.getRange('A1').getValue() || sheet.getName();
 
-  const builder = (charts.length > 0 ? charts[0].modify() : sheet.newChart())
+  // 再生数グラフ: このシート自身のデータのみ参照するグラフ
+  const viewCountChart = sheet.getCharts().find(c =>
+    c.getRanges().every(r => r.getSheet().getName() === sheet.getName())
+  ) ?? null;
+
+  const builder = (viewCountChart ? viewCountChart.modify() : sheet.newChart())
     .asLineChart()
     .clearRanges()
     .addRange(dataRange)
@@ -208,7 +213,63 @@ function updateIndividualChart_(sheet) {
     .setOption('pointSize', 2)
     .setOption('lineWidth', 2);
 
-  if (charts.length > 0) {
+  if (viewCountChart) {
+    sheet.updateChart(builder.build());
+  } else {
+    sheet.insertChart(builder.build());
+  }
+}
+
+/**
+ * 各動画シートにチャンネル内順位の推移グラフを作成または更新する。
+ * 「チャンネル内順位」シートから該当列を参照してグラフを描画する。
+ * 順位シートにデータがなければ何もしない。
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * @param {GoogleAppsScript.Spreadsheet.Sheet}       sheet  動画シート
+ */
+function updateVideoRankChart_(ss, sheet) {
+  const rankSheet = ss.getSheetByName(CONFIG.RANK_SHEET_NAME);
+  if (!rankSheet) return;
+
+  const rankLastRow = rankSheet.getLastRow();
+  const rankLastCol = rankSheet.getLastColumn();
+  if (rankLastRow < 3 || rankLastCol < 2) return;
+
+  // 動画タイトルと一致する列を行2（タイトル行）から探す
+  const videoTitle = sheet.getRange('A1').getValue();
+  if (!videoTitle) return;
+
+  const titleRow  = rankSheet.getRange(2, 2, 1, rankLastCol - 1).getValues()[0];
+  const colOffset = titleRow.findIndex(t => String(t) === String(videoTitle));
+  if (colOffset === -1) return; // この動画の順位データがまだない
+
+  const rankCol  = colOffset + 2; // 1-based (B列=2から)
+  const dataRows = rankLastRow - 1; // 行2ヘッダー〜lastRow
+
+  // 順位グラフ: チャンネル内順位シートのデータを参照するグラフ
+  const rankChart = sheet.getCharts().find(c =>
+    c.getRanges().some(r => r.getSheet().getName() === CONFIG.RANK_SHEET_NAME)
+  ) ?? null;
+
+  const builder = (rankChart ? rankChart.modify() : sheet.newChart())
+    .asLineChart()
+    .clearRanges()
+    .addRange(rankSheet.getRange(2, 1, dataRows, 1))       // 日時列（行2ヘッダー含む）
+    .addRange(rankSheet.getRange(2, rankCol, dataRows, 1)) // 順位列
+    .setNumHeaders(1)
+    .setPosition(10, 11, 0, 0)
+    .setOption('title', 'チャンネル内順位')
+    .setOption('legend', { position: 'none' })
+    .setOption('hAxis', { slantedText: true, slantedTextAngle: 45 })
+    .setOption('vAxis.format', '#,##0;#,##0;0')
+    .setOption('vAxis.title', '順位（1位が上）')
+    .setOption('interpolateNulls', true)
+    .setOption('pointSize', 3)
+    .setOption('lineWidth', 2)
+    .setOption('width', 600)
+    .setOption('height', 370);
+
+  if (rankChart) {
     sheet.updateChart(builder.build());
   } else {
     sheet.insertChart(builder.build());
