@@ -222,7 +222,8 @@ function updateIndividualChart_(sheet) {
 
 /**
  * 順位データ（負値格納）から Y 軸の viewWindow を計算する。
- *   上端: bestRank を 100 の倍数に切り捨て（例: rank 3 → 0, rank 150 → 100）
+ *   上端: bestRank を 10 の倍数に切り捨て（例: rank 3 → 0, rank 13 → 10）
+ *         ただし 0 のときは GAS が setOption(key, 0) を無視するバグを回避するため 1 を返す
  *   下端: worstRank を 10 の倍数に切り上げ（例: rank 25 → 30, rank 20 → 20）
  * データが空なら { min: null, max: null } を返す（GAS 自動スケール）。
  * @param {number[]} storedValues  シートに格納された負値の順位データ
@@ -235,12 +236,14 @@ function computeRankViewWindow_(storedValues) {
   const bestRank  = Math.round(-Math.max(...valid)); // max(-3,-25) = -3 → 3
   const worstRank = Math.round(-Math.min(...valid)); // min(-3,-25) = -25 → 25
 
-  const topBoundaryRank    = Math.floor(bestRank  / 10)  * 10;  // 例: rank 3 → 0, rank 13 → 10
-  const bottomBoundaryRank = Math.ceil (worstRank / 10)  * 10;  // 30 (rank 25)
+  const topBoundaryRank    = Math.floor(bestRank  / 10) * 10; // 例: rank 3 → 0, rank 13 → 10
+  const bottomBoundaryRank = Math.ceil (worstRank / 10) * 10; // 例: rank 25 → 30
 
   return {
-    max: -topBoundaryRank,    // 0 → Y軸上端（1位が上に表示）
-    min: -bottomBoundaryRank, // -30 → Y軸下端
+    // topBoundaryRank=0 のとき vMax=0 を渡すと GAS が falsy として無視し
+    // 以前の vMax=-10 が残って 1〜9 位が描画されなくなるため 1（正値）を使用
+    max: topBoundaryRank === 0 ? 1 : -topBoundaryRank,
+    min: -bottomBoundaryRank,
   };
 }
 
