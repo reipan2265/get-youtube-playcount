@@ -3,6 +3,30 @@
 // ==========================================
 
 /**
+ * ISO 8601 duration 文字列（例: "PT1H30M5S"）を秒数に変換する。
+ * @param {string} iso
+ * @returns {number}
+ */
+function parseDurationSeconds_(iso) {
+  const m = (iso ?? '').match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!m) return 0;
+  return (parseInt(m[1] || 0) * 3600) + (parseInt(m[2] || 0) * 60) + parseInt(m[3] || 0);
+}
+
+/**
+ * YouTube API レスポンスのアイテムがライブ配信アーカイブかどうかを判定する。
+ * プレミア公開した通常動画も liveStreamingDetails を持つため、
+ * 動画時間が 30 分超の場合のみライブと分類する。
+ * @param {object} item  YouTube API Videos.list のレスポンスアイテム
+ * @returns {boolean}
+ */
+function isLiveVideo_(item) {
+  if (!item.liveStreamingDetails) return false;
+  const durationSec = parseDurationSeconds_(item.contentDetails?.duration ?? '');
+  return durationSec > 30 * 60;
+}
+
+/**
  * Date を "yyyy/MM/dd HH:mm"（JST）にフォーマットする。
  * @param {Date} date
  * @returns {string}

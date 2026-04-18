@@ -38,7 +38,7 @@ function fetchAllVideoData_(videoIds) {
   for (let i = 0; i < videoIds.length; i += 50) {
     const batch = videoIds.slice(i, i + 50);
     try {
-      const res = YouTube.Videos.list('snippet,statistics,liveStreamingDetails', { id: batch.join(',') });
+      const res = YouTube.Videos.list('snippet,statistics,contentDetails,liveStreamingDetails', { id: batch.join(',') });
       res.items?.forEach(item => { result[item.id] = item; });
     } catch (e) {
       console.warn(`動画情報一括取得失敗 (offset ${i}): ${e.message}`);
@@ -84,11 +84,11 @@ function fetchVideoStatsAndType_(videoIds) {
   for (let i = 0; i < videoIds.length; i += 50) {
     const batch = videoIds.slice(i, i + 50);
     try {
-      const res = YouTube.Videos.list('statistics,liveStreamingDetails', { id: batch.join(',') });
+      const res = YouTube.Videos.list('statistics,contentDetails,liveStreamingDetails', { id: batch.join(',') });
       res.items?.forEach(item => {
         result[item.id] = {
           viewCount: Number(item.statistics.viewCount),
-          isLive:    !!(item.liveStreamingDetails),
+          isLive:    isLiveVideo_(item),
         };
       });
     } catch (e) {
@@ -110,7 +110,7 @@ function saveVideoMetadataToProps_(videoDataMap) {
       channelId:    item.snippet.channelId,
       title:        item.snippet.title,
       channelTitle: item.snippet.channelTitle,
-      isLive:       !!(item.liveStreamingDetails),
+      isLive:       isLiveVideo_(item),
     };
   });
   PropertiesService.getScriptProperties().setProperty('video_metadata', JSON.stringify(meta));
