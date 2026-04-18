@@ -236,12 +236,14 @@ function computeRankViewWindow_(storedValues) {
   const bestRank  = Math.round(-Math.max(...valid)); // max(-3,-25) = -3 → 3
   const worstRank = Math.round(-Math.min(...valid)); // min(-3,-25) = -25 → 25
 
-  const topBoundaryRank    = Math.floor(bestRank  / 10) * 10; // 例: rank 3 → 0, rank 13 → 10
-  const bottomBoundaryRank = Math.ceil (worstRank / 10) * 10; // 例: rank 25 → 30
+  // (bestRank - 1) で計算することで rank が 10 の倍数ちょうどの場合でも
+  // 1グリッド上の余白を確保し、より良い順位が描画範囲外になるのを防ぐ
+  // 例: rank 10 → floor(9/10)*10 = 0, rank 11 → floor(10/10)*10 = 10
+  const topBoundaryRank    = Math.floor((bestRank - 1) / 10) * 10;
+  const bottomBoundaryRank = Math.ceil (worstRank       / 10) * 10;
 
   return {
-    // topBoundaryRank=0 のとき vMax=0 を渡すと GAS が falsy として無視し
-    // 以前の vMax=-10 が残って 1〜9 位が描画されなくなるため 1（正値）を使用
+    // topBoundaryRank=0 のとき vMax=0 を渡すと GAS が falsy として無視するため 1 を使用
     max: topBoundaryRank === 0 ? 1 : -topBoundaryRank,
     min: -bottomBoundaryRank,
   };
