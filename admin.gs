@@ -58,6 +58,32 @@ function resetSheets() {
 }
 
 /**
+ * チャンネル内でライブと判定された動画の上位20件を再生数降順でログ出力する。
+ * isLiveVideo_() の判定結果を確認するためのデバッグ用関数。
+ * 対象チャンネルID は Script Properties の video_metadata から自動取得する。
+ */
+function debugLiveRanking() {
+  const metaMap = loadVideoMetadataFromProps_();
+  const channelIds = [...new Set(Object.values(metaMap).map(m => m.channelId).filter(Boolean))];
+
+  channelIds.forEach(channelId => {
+    console.log(`\n=== チャンネル ${channelId} ===`);
+    const allIds  = fetchChannelVideoIds_(channelId);
+    const stats   = fetchVideoStatsAndType_(allIds);
+
+    const lives = Object.entries(stats)
+      .filter(([, v]) => v.isLive)
+      .sort(([, a], [, b]) => b.viewCount - a.viewCount)
+      .slice(0, 20);
+
+    console.log(`ライブ判定数: ${Object.values(stats).filter(v => v.isLive).length} / ${allIds.length}`);
+    lives.forEach(([id, v], i) => {
+      console.log(`  ${i + 1}位: ${id}  ${(v.viewCount / 10000).toFixed(1)}万回`);
+    });
+  });
+}
+
+/**
  * 比較シートのみを再生成する（動画データシートは変更しない）。
  * グラフやレイアウトを修正したい場合に使用する。
  */
