@@ -38,7 +38,7 @@ function fetchAllVideoData_(videoIds) {
   for (let i = 0; i < videoIds.length; i += 50) {
     const batch = videoIds.slice(i, i + 50);
     try {
-      const res = YouTube.Videos.list('snippet,statistics,contentDetails,liveStreamingDetails', { id: batch.join(',') });
+      const res = YouTube.Videos.list('snippet,statistics', { id: batch.join(',') });
       res.items?.forEach(item => { result[item.id] = item; });
     } catch (e) {
       console.warn(`動画情報一括取得失敗 (offset ${i}): ${e.message}`);
@@ -74,28 +74,51 @@ function fetchChannelVideoIds_(channelId) {
 }
 
 /**
- * 動画 ID リストの再生数とライブ種別を一括取得して { videoId: { viewCount, isLive } } を返す。
- * liveStreamingDetails が存在する動画をライブとして分類する。
+ * 動画 ID リストの再生数のみを一括取得して { videoId: viewCount } を返す。
  * @param {string[]} videoIds
- * @returns {Object<string, { viewCount: number, isLive: boolean }>}
+ * @returns {Object<string, number>}
  */
-function fetchVideoStatsAndType_(videoIds) {
+function fetchViewCountsOnly_(videoIds) {
   const result = {};
   for (let i = 0; i < videoIds.length; i += 50) {
     const batch = videoIds.slice(i, i + 50);
     try {
-      const res = YouTube.Videos.list('statistics,contentDetails,liveStreamingDetails', { id: batch.join(',') });
-      res.items?.forEach(item => {
-        result[item.id] = {
-          viewCount: Number(item.statistics.viewCount),
-          isLive:    isLiveVideo_(item),
-        };
-      });
+      const res = YouTube.Videos.list('statistics', { id: batch.join(',') });
+      res.items?.forEach(item => { result[item.id] = Number(item.statistics.viewCount); });
     } catch (e) {
       console.warn(`再生数一括取得失敗 (offset ${i}): ${e.message}`);
     }
   }
   return result;
+}
+
+/**
+ * チャンネルの完了済みライブ配信 ID を search.list で取得して Set で返す。
+ * プレミア公開の通常動画は含まれない（eventType=completed はライブ配信のみ）。
+ * コスト: 100クォータ/コール（50件ずつページネーション）。
+ * @param {string} channelId
+ * @returns {Set<string>}
+ */
+function fetchActualLiveIds_(channelId) {
+  const ids = new Set();
+  let pageToken = '';
+  try {
+    do {
+      const res = YouTube.Search.list('id', {
+        channelId,
+        type:      'video',
+        eventType: 'completed',
+        maxResults: 50,
+        pageToken,
+      });
+      res.items?.forEach(item => ids.add(item.id.videoId));
+      pageToken = res.nextPageToken ?? '';
+    } while (pageToken);
+  } catch (e) {
+    console.warn(`ライブID取得失敗 (${channelId}): ${e.message}`);
+  }
+  console.log(`チャンネル ${channelId}: ライブ配信 ${ids.size} 件`);
+  return ids;
 }
 
 /**
@@ -110,7 +133,6 @@ function saveVideoMetadataToProps_(videoDataMap) {
       channelId:    item.snippet.channelId,
       title:        item.snippet.title,
       channelTitle: item.snippet.channelTitle,
-      isLive:       isLiveVideo_(item),
     };
   });
   PropertiesService.getScriptProperties().setProperty('video_metadata', JSON.stringify(meta));
@@ -169,27 +191,28 @@ function buildChannelGroups_(metaMap, videoIds) {
 function computeRanksByChannelGroups_(channelGroups) {
   const rankMap      = {};
   const viewCountMap = {};
-  const metaMap      = loadVideoMetadataFromProps_();
 
   Object.entries(channelGroups).forEach(([channelId, trackedIds]) => {
     console.log(`チャンネル ${channelId} の全動画を取得中...`);
     const allIds    = fetchChannelVideoIds_(channelId);
     console.log(`チャンネル全動画: ${allIds.length} 本`);
 
-    const statsMap  = fetchVideoStatsAndType_(allIds);
+    // search.list(eventType=completed) でプレミア公開を除いたライブ配信のみ取得
+    const liveIdSet = fetchActualLiveIds_(channelId);
+    const viewCounts = fetchViewCountsOnly_(allIds);
 
     trackedIds.forEach(id => {
-      const trackedIsLive = metaMap[id]?.isLive ?? false;
+      const trackedIsLive = liveIdSet.has(id);
 
       // 同種（ライブ同士 or 通常動画同士）のみで順位計算
       const sameType = allIds.filter(vid =>
-        statsMap[vid] != null && statsMap[vid].isLive === trackedIsLive
+        viewCounts[vid] != null && liveIdSet.has(vid) === trackedIsLive
       );
-      const sorted = sameType.sort((a, b) => statsMap[b].viewCount - statsMap[a].viewCount);
+      const sorted = sameType.sort((a, b) => viewCounts[b] - viewCounts[a]);
 
       const idx        = sorted.indexOf(id);
       rankMap[id]      = idx >= 0 ? idx + 1 : null;
-      viewCountMap[id] = statsMap[id]?.viewCount ?? null;
+      viewCountMap[id] = viewCounts[id] ?? null;
 
       console.log(`[${trackedIsLive ? 'ライブ' : '動画'}内] ${id}: ${rankMap[id]}位 / ${sameType.length}本中`);
     });
