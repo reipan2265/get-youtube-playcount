@@ -537,53 +537,67 @@ function updateRankHistoryChart_(ss) {
   const headerDataRows = lastRow - 1; // 行2（タイトルヘッダー）〜lastRow の行数
   let nextRow = lastRow + 2;
 
-  // チャンネルグループごとのグラフを生成
+  // 列インデックス → 動画ID のマップ（ライブ判定に使用）
+  const colMap      = getRankSheetColMap_();
+  const colToVidId  = Object.fromEntries(Object.entries(colMap).map(([vid, col]) => [col, vid]));
+  const liveIdSet   = new Set(CONFIG.LIVE_VIDEO_IDS);
+
+  // チャンネルグループごと、さらにライブ/通常動画に分けてグラフを生成
   const dataRowCount = lastRow - 2; // 行3以降が実データ
+  let chartCount = 0;
   Object.entries(channelGroups).forEach(([channelTitle, cols]) => {
-    // Y軸範囲をチャンネル内全動画のデータから計算
-    const storedValues = [];
-    if (dataRowCount > 0) {
-      cols.forEach(col => {
-        sheet.getRange(3, col, dataRowCount, 1).getValues()
-          .forEach(([v]) => { if (typeof v === 'number' && v < 0) storedValues.push(v); });
+    [
+      { label: 'ライブ',   filter: col =>  liveIdSet.has(colToVidId[col] ?? '') },
+      { label: '動画',     filter: col => !liveIdSet.has(colToVidId[col] ?? '') },
+    ].forEach(({ label, filter }) => {
+      const groupCols = cols.filter(filter);
+      if (groupCols.length === 0) return;
+
+      const storedValues = [];
+      if (dataRowCount > 0) {
+        groupCols.forEach(col => {
+          sheet.getRange(3, col, dataRowCount, 1).getValues()
+            .forEach(([v]) => { if (typeof v === 'number' && v < 0) storedValues.push(v); });
+        });
+      }
+      const { min: vMin, max: vMax } = computeRankViewWindow_(storedValues);
+
+      const builder = sheet.newChart()
+        .asLineChart()
+        .setNumHeaders(1)
+        .addRange(sheet.getRange(2, 1, headerDataRows, 1));
+
+      groupCols.forEach(col => {
+        builder.addRange(sheet.getRange(2, col, headerDataRows, 1));
       });
-    }
-    const { min: vMin, max: vMax } = computeRankViewWindow_(storedValues);
 
-    const builder = sheet.newChart()
-      .asLineChart()
-      .setNumHeaders(1) // 行2をヘッダー（シリーズ名）として認識させる
-      .addRange(sheet.getRange(2, 1, headerDataRows, 1)); // 日時列（行2ヘッダー含む）
-
-    cols.forEach(col => {
-      builder.addRange(sheet.getRange(2, col, headerDataRows, 1));
-    });
-
-    builder
-      .setPosition(nextRow, 1, 0, 0)
-      .setOption('title', `チャンネル内順位の推移 — ${channelTitle}`)
-      .setOption('legend', { position: 'right', textStyle: { fontSize: 9 } })
-      .setOption('hAxis', { slantedText: true, slantedTextAngle: 45 })
-      .setOption('vAxis.format', '#,##0;#,##0;0') // 負値を正値として表示
-      .setOption('vAxis.title', '順位（1位が上）')
-      .setOption('interpolateNulls', true)
-      .setOption('pointSize', 3)
-      .setOption('lineWidth', 2)
-      .setOption('width', 1200)
-      .setOption('height', CHART_HEIGHT);
-
-    if (vMin !== null) {
       builder
-        .setOption('vAxis.viewWindowMode', 'explicit')
-        .setOption('vAxis.viewWindow.min', vMin)
-        .setOption('vAxis.viewWindow.max', vMax);
-    }
+        .setPosition(nextRow, 1, 0, 0)
+        .setOption('title', `チャンネル内順位の推移 — ${channelTitle}（${label}）`)
+        .setOption('legend', { position: 'right', textStyle: { fontSize: 9 } })
+        .setOption('hAxis', { slantedText: true, slantedTextAngle: 45 })
+        .setOption('vAxis.format', '#,##0;#,##0;0')
+        .setOption('vAxis.title', '順位（1位が上）')
+        .setOption('interpolateNulls', true)
+        .setOption('pointSize', 3)
+        .setOption('lineWidth', 2)
+        .setOption('width', 1200)
+        .setOption('height', CHART_HEIGHT);
 
-    sheet.insertChart(builder.build());
-    nextRow += Math.ceil(CHART_HEIGHT / ROW_HEIGHT_PX) + 3;
+      if (vMin !== null) {
+        builder
+          .setOption('vAxis.viewWindowMode', 'explicit')
+          .setOption('vAxis.viewWindow.min', vMin)
+          .setOption('vAxis.viewWindow.max', vMax);
+      }
+
+      sheet.insertChart(builder.build());
+      nextRow += Math.ceil(CHART_HEIGHT / ROW_HEIGHT_PX) + 3;
+      chartCount++;
+    });
   });
 
-  console.log(`${CONFIG.RANK_SHEET_NAME}: ${Object.keys(channelGroups).length} チャンネル分のグラフを更新しました`);
+  console.log(`${CONFIG.RANK_SHEET_NAME}: ${chartCount} グラフを更新しました`);
 }
 
 /**

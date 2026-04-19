@@ -74,24 +74,17 @@ function fetchChannelVideoIds_(channelId) {
 }
 
 /**
- * 動画 ID リストの再生数と liveStreamingDetails の有無を一括取得する。
- * { videoId: { viewCount, isLive } } を返す。
- * isLive は liveStreamingDetails の存在で判定（ライブ配信＋プレミア公開を含む）。
+ * 動画 ID リストの再生数のみを一括取得して { videoId: viewCount } を返す。
  * @param {string[]} videoIds
- * @returns {Object<string, { viewCount: number, isLive: boolean }>}
+ * @returns {Object<string, number>}
  */
-function fetchVideoStatsAndType_(videoIds) {
+function fetchViewCountsOnly_(videoIds) {
   const result = {};
   for (let i = 0; i < videoIds.length; i += 50) {
     const batch = videoIds.slice(i, i + 50);
     try {
-      const res = YouTube.Videos.list('statistics,liveStreamingDetails', { id: batch.join(',') });
-      res.items?.forEach(item => {
-        result[item.id] = {
-          viewCount: Number(item.statistics.viewCount),
-          isLive:    !!(item.liveStreamingDetails),
-        };
-      });
+      const res = YouTube.Videos.list('statistics', { id: batch.join(',') });
+      res.items?.forEach(item => { result[item.id] = Number(item.statistics.viewCount); });
     } catch (e) {
       console.warn(`再生数一括取得失敗 (offset ${i}): ${e.message}`);
     }
@@ -175,26 +168,17 @@ function computeRanksByChannelGroups_(channelGroups) {
     const allIds    = fetchChannelVideoIds_(channelId);
     console.log(`チャンネル全動画: ${allIds.length} 本`);
 
-    const statsMap      = fetchVideoStatsAndType_(allIds);
-    const configLiveSet = new Set(CONFIG.LIVE_VIDEO_IDS);
-
-    // LIVE_VIDEO_IDS に含まれる動画は常にライブ扱い、それ以外は liveStreamingDetails で判定
-    const isLiveVideo = (vid) => configLiveSet.has(vid) || (statsMap[vid]?.isLive ?? false);
+    const viewCounts = fetchViewCountsOnly_(allIds);
+    const sorted     = allIds
+      .filter(id => viewCounts[id] != null)
+      .sort((a, b) => viewCounts[b] - viewCounts[a]);
 
     trackedIds.forEach(id => {
-      const trackedIsLive = isLiveVideo(id);
-
-      // 同種（ライブ同士 or 通常動画同士）のみで順位計算
-      const sameType = allIds.filter(vid =>
-        statsMap[vid] != null && isLiveVideo(vid) === trackedIsLive
-      );
-      const sorted = sameType.sort((a, b) => statsMap[b].viewCount - statsMap[a].viewCount);
-
       const idx        = sorted.indexOf(id);
       rankMap[id]      = idx >= 0 ? idx + 1 : null;
-      viewCountMap[id] = statsMap[id]?.viewCount ?? null;
+      viewCountMap[id] = viewCounts[id] ?? null;
 
-      console.log(`[${trackedIsLive ? 'ライブ' : '動画'}内] ${id}: ${rankMap[id]}位 / ${sameType.length}本中`);
+      console.log(`チャンネル全体 ${id}: ${rankMap[id]}位 / ${allIds.length}本中`);
     });
   });
 

@@ -58,27 +58,26 @@ function resetSheets() {
 }
 
 /**
- * チャンネル内でライブと判定された動画の上位20件を再生数降順でログ出力する。
- * isLiveVideo_() の判定結果を確認するためのデバッグ用関数。
- * 対象チャンネルID は Script Properties の video_metadata から自動取得する。
+ * CONFIG.LIVE_VIDEO_IDS に含まれる動画のチャンネル内順位（全動画混合）をログ出力する。
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
  */
 function debugLiveRanking() {
-  const metaMap = loadVideoMetadataFromProps_();
+  const metaMap    = loadVideoMetadataFromProps_();
+  const liveIds    = new Set(CONFIG.LIVE_VIDEO_IDS);
   const channelIds = [...new Set(Object.values(metaMap).map(m => m.channelId).filter(Boolean))];
 
   channelIds.forEach(channelId => {
     console.log(`\n=== チャンネル ${channelId} ===`);
-    const allIds  = fetchChannelVideoIds_(channelId);
-    const stats   = fetchVideoStatsAndType_(allIds);
+    const allIds     = fetchChannelVideoIds_(channelId);
+    const viewCounts = fetchViewCountsOnly_(allIds);
+    const sorted     = allIds
+      .filter(id => viewCounts[id] != null)
+      .sort((a, b) => viewCounts[b] - viewCounts[a]);
 
-    const lives = Object.entries(stats)
-      .filter(([, v]) => v.isLive)
-      .sort(([, a], [, b]) => b.viewCount - a.viewCount)
-      .slice(0, 20);
-
-    console.log(`ライブ判定数: ${Object.values(stats).filter(v => v.isLive).length} / ${allIds.length}`);
-    lives.forEach(([id, v], i) => {
-      console.log(`  ${i + 1}位: ${id}  ${(v.viewCount / 10000).toFixed(1)}万回`);
+    CONFIG.LIVE_VIDEO_IDS.forEach(id => {
+      const idx = sorted.indexOf(id);
+      const rank = idx >= 0 ? idx + 1 : null;
+      console.log(`  ${id}: ${rank}位 / ${allIds.length}本中 (${((viewCounts[id] ?? 0) / 10000).toFixed(1)}万回)`);
     });
   });
 }
