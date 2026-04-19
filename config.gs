@@ -11,6 +11,10 @@ const CONFIG = {
   // 推移のみ記録（再生数比較シートには含めない）
   WATCH_ONLY_VIDEO_IDS: ['sd-4mwj1UDY'],
 
+  // ライブ配信アーカイブとして扱う動画 ID（チャンネル内順位をライブ内で比較）
+  // YouTube APIではプレミア公開と区別できないため、ここで明示指定する
+  LIVE_VIDEO_IDS: ['sd-4mwj1UDY'],
+
   // 全動画比較シートのシート名
   COMP_SHEET_NAME: '再生数比較',
 
