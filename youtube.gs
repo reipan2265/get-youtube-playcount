@@ -178,13 +178,15 @@ function computeRanksByChannelGroups_(channelGroups) {
     const statsMap      = fetchVideoStatsAndType_(allIds);
     const configLiveSet = new Set(CONFIG.LIVE_VIDEO_IDS);
 
-    trackedIds.forEach(id => {
-      // 追跡動画の種別は CONFIG.LIVE_VIDEO_IDS で明示指定（API判定は不正確なため）
-      const trackedIsLive = configLiveSet.has(id);
+    // LIVE_VIDEO_IDS に含まれる動画は常にライブ扱い、それ以外は liveStreamingDetails で判定
+    const isLiveVideo = (vid) => configLiveSet.has(vid) || (statsMap[vid]?.isLive ?? false);
 
-      // チャンネル全動画を liveStreamingDetails の有無で分類し、同種のみで順位計算
+    trackedIds.forEach(id => {
+      const trackedIsLive = isLiveVideo(id);
+
+      // 同種（ライブ同士 or 通常動画同士）のみで順位計算
       const sameType = allIds.filter(vid =>
-        statsMap[vid] != null && statsMap[vid].isLive === trackedIsLive
+        statsMap[vid] != null && isLiveVideo(vid) === trackedIsLive
       );
       const sorted = sameType.sort((a, b) => statsMap[b].viewCount - statsMap[a].viewCount);
 
