@@ -99,7 +99,8 @@ function rebuildComparisonSheet() {
  */
 function sortVideoSheetsByPublishDate_(ss) {
   const sheets = ss.getSheets();
-  const preserved   = sheets.filter(s =>  CONFIG.PRESERVE_SHEET_NAMES.includes(s.getName()));
+  const sheetMap    = new Map(sheets.map(s => [s.getName(), s]));
+  const preserved   = CONFIG.PRESERVE_SHEET_NAMES.map(name => sheetMap.get(name)).filter(Boolean);
   const videoSheets = sheets.filter(s => !CONFIG.PRESERVE_SHEET_NAMES.includes(s.getName()) && !s.getName().startsWith('_'));
 
   videoSheets.sort((a, b) => {
