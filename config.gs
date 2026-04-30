@@ -22,7 +22,7 @@ const CONFIG = {
   RANK_SHEET_NAME: 'チャンネル内順位',
 
   // 削除・リセット対象から除外するシート名
-  PRESERVE_SHEET_NAMES: ['再生数比較', 'チャンネル内順位', 'シート1', '_abs_helper', '_elapsed_helper', '_rank_helper'],
+  PRESERVE_SHEET_NAMES: ['再生数比較', 'チャンネル内順位', '_abs_helper', '_elapsed_helper', '_rank_helper'],
 
   // 比較グラフのサイズ（ピクセル）
   CHART: {

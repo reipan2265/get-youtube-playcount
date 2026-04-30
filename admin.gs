@@ -57,6 +57,13 @@ function resetSheets() {
   console.log('動画シートをリセットしました');
 }
 
+function deleteSheet1() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('シート1');
+  if (sheet) { ss.deleteSheet(sheet); console.log('シート1を削除しました'); }
+  else        { console.log('シート1は存在しません'); }
+}
+
 /**
  * CONFIG.LIVE_VIDEO_IDS に含まれる動画のチャンネル内順位（全動画混合）をログ出力する。
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
