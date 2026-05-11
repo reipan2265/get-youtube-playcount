@@ -2,26 +2,29 @@ name: Deploy to Google Apps Script
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+    paths:
+      - "*.gs"
+      - "appsscript.json"
+      - "package*.json"
+      - ".github/workflows/deploy.yml"
   workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   deploy:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Install clasp
-        run: npm install -g @google/clasp
-
+          cache: npm
+      - run: npm install -g @google/clasp
       - name: Authenticate clasp
-        run: |
-          echo '${{ secrets.CLASPRC_JSON }}' > ~/.clasprc.json
-
-      - name: Push to Google Apps Script
-        run: clasp push --force
+        run: printf '%s' '${{ secrets.CLASPRC_JSON }}' > ~/.clasprc.json
+      - run: clasp push --force

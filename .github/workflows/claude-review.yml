@@ -1,24 +1,26 @@
 name: Claude Code Review
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
   issue_comment:
     types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  id-token: write
 
 jobs:
   claude-review:
     if: |
-      (github.event_name == 'pull_request') ||
-      (github.event_name == 'issue_comment' &&
-       github.event.issue.pull_request &&
-       contains(github.event.comment.body, '@claude'))
+      github.event.issue.pull_request != null &&
+      contains(github.event.comment.body, '@claude') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-      issues: write
-      id-token: write
+    timeout-minutes: 15
+    concurrency:
+      group: claude-review-${{ github.event.issue.number }}
+      cancel-in-progress: true
     steps:
       - uses: anthropics/claude-code-action@v1
         with:
