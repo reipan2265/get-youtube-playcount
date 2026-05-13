@@ -3,7 +3,7 @@
 <!-- GAS version は deploy.yml の clasp version で自動作成されます。
      各リリースの GAS バージョン番号は GitHub Actions のジョブサマリーで確認できます。 -->
 
-## [1.0.3] - 2026-05-13
+## [1.0.4] - 2026-05-13
 ### Fixed
 - `main()` 実行後にシートタブが投稿日昇順に並び替えられない問題を修正（`sortVideoSheetsByPublishDate_` を毎時呼び出すよう変更）
 ### Added
