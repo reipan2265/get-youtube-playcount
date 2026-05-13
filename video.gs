@@ -532,10 +532,11 @@ function updateRankHistoryChart_(ss) {
     channelGroups[key].push(i + 2); // 1-based (B列=2, C列=3, ...)
   });
 
+  const CHART_WIDTH    = 900;
   const CHART_HEIGHT   = 600;
-  const ROW_HEIGHT_PX  = 21;
+  const COL_WIDTH_PX   = 100; // シートのデフォルト列幅
   const headerDataRows = lastRow - 1; // 行2（タイトルヘッダー）〜lastRow の行数
-  let nextRow = lastRow + 2;
+  let chartCol = 1; // 横並び用列インデックス（1-based）
 
   // 列インデックス → 動画ID のマップ（ライブ判定に使用）
   const colMap      = getRankSheetColMap_();
@@ -572,7 +573,7 @@ function updateRankHistoryChart_(ss) {
       });
 
       builder
-        .setPosition(nextRow, 1, 0, 0)
+        .setPosition(1, chartCol, 0, 0)
         .setOption('title', `チャンネル内順位の推移 — ${channelTitle}（${label}）`)
         .setOption('legend', { position: 'right', textStyle: { fontSize: 9 } })
         .setOption('hAxis', { slantedText: true, slantedTextAngle: 45 })
@@ -581,7 +582,7 @@ function updateRankHistoryChart_(ss) {
         .setOption('interpolateNulls', true)
         .setOption('pointSize', 3)
         .setOption('lineWidth', 2)
-        .setOption('width', 1200)
+        .setOption('width', CHART_WIDTH)
         .setOption('height', CHART_HEIGHT);
 
       if (vMin !== null) {
@@ -592,7 +593,7 @@ function updateRankHistoryChart_(ss) {
       }
 
       sheet.insertChart(builder.build());
-      nextRow += Math.ceil(CHART_HEIGHT / ROW_HEIGHT_PX) + 3;
+      chartCol += Math.ceil(CHART_WIDTH / COL_WIDTH_PX) + 1;
       chartCount++;
     });
   });
