@@ -30,6 +30,7 @@ jobs:
       - run: clasp push --force
       - name: Create GAS version
         run: |
+          git fetch --tags --quiet
           GIT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "untagged")
           GIT_MSG=$(git log -1 --format='%s')
           GAS_VERSION=$(clasp version "${GIT_TAG}: ${GIT_MSG}" | grep -oE '[0-9]+$')
