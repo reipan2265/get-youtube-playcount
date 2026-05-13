@@ -94,6 +94,7 @@ function debugLiveRanking() {
  * グラフやレイアウトを修正したい場合に使用する。
  */
 function rebuildComparisonSheet() {
+  loadConfig_();
   console.log('比較シートを再構築します...');
   updateComparisonSheet_(SpreadsheetApp.getActiveSpreadsheet());
   console.log('完了。');
@@ -122,4 +123,39 @@ function sortVideoSheetsByPublishDate_(ss) {
     ss.setActiveSheet(sheet);
     ss.moveActiveSheet(index + 1);
   });
+}
+
+/**
+ * `_settings` シートを作成し、現在の CONFIG 値を初期データとして書き込む。
+ * すでに存在する場合はヘッダー行のみ確認し、データは上書きしない。
+ * WebUI 連携の初期セットアップ時に手動実行する。
+ */
+function ensureSettingsSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName('_settings');
+
+  if (!sh) {
+    sh = ss.insertSheet('_settings');
+    console.log('_settings シートを作成しました。');
+  }
+
+  // ヘッダー行
+  sh.getRange(1, 1, 1, 3).setValues([['key', 'value', 'memo']]);
+  sh.getRange(1, 1, 1, 3).setFontWeight('bold');
+
+  // 既にデータ行があれば書き込みをスキップ
+  if (sh.getLastRow() > 1) {
+    console.log('_settings シートにはすでにデータが存在します。上書きをスキップしました。');
+    return;
+  }
+
+  const rows = [
+    ['playlist_id',          CONFIG.PLAYLIST_ID,                          'プレイリスト ID（空文字で無効化）'],
+    ['extra_video_ids',      CONFIG.EXTRA_VIDEO_IDS.join(','),             'プレイリスト外の追加動画 ID（カンマ区切り）'],
+    ['watch_only_video_ids', CONFIG.WATCH_ONLY_VIDEO_IDS.join(','),        '推移のみ記録・比較シートに含めない動画 ID'],
+    ['live_video_ids',       CONFIG.LIVE_VIDEO_IDS.join(','),              'ライブ配信アーカイブとして扱う動画 ID'],
+    ['updated_at',           new Date().toISOString(),                     'WebUI からの最終更新日時'],
+  ];
+  sh.getRange(2, 1, rows.length, 3).setValues(rows);
+  console.log('_settings シートに初期値を書き込みました。');
 }

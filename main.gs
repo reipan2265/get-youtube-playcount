@@ -7,6 +7,7 @@
  * 再生数を取得・記録し、12時間ごとに updateChannelRanks_() を呼び出す。
  */
 function main() {
+  loadConfig_();
   console.log('再生数取得を開始します...');
 
   const ss  = SpreadsheetApp.getActiveSpreadsheet();
@@ -69,6 +70,7 @@ function updateChannelRanks(ss, now) {
  * @param {Date} now
  */
 function updateChannelRanks_(ss, now) {
+  loadConfig_();
   console.log('チャンネル内順位の更新を開始します...');
 
   const metaMap = loadVideoMetadataFromProps_();
@@ -100,6 +102,7 @@ function updateChannelRanks_(ss, now) {
  * 個別グラフ更新は後回し（タイムアウトしても比較グラフへの影響なし）。
  */
 function updateAllCharts() {
+  loadConfig_();
   console.log('グラフ・比較シート更新を開始します...');
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
