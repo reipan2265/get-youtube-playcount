@@ -3,6 +3,10 @@
 <!-- GAS version は deploy.yml の clasp version で自動作成されます。
      各リリースの GAS バージョン番号は GitHub Actions のジョブサマリーで確認できます。 -->
 
+## [1.0.5] - 2026-05-13
+### Changed
+- チャンネル内順位グラフをデータテーブル下の縦積みから行1の横一列並びに変更
+
 ## [1.0.4] - 2026-05-13
 ### Fixed
 - `main()` 実行後にシートタブが投稿日昇順に並び替えられない問題を修正（`sortVideoSheetsByPublishDate_` を毎時呼び出すよう変更）
