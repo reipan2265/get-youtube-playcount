@@ -22,7 +22,7 @@ const CONFIG = {
   RANK_SHEET_NAME: 'チャンネル内順位',
 
   // 削除・リセット対象から除外するシート名
-  PRESERVE_SHEET_NAMES: ['再生数比較', 'チャンネル内順位', '_abs_helper', '_elapsed_helper', '_rank_helper'],
+  PRESERVE_SHEET_NAMES: ['再生数比較', 'チャンネル内順位', '_settings', '_abs_helper', '_elapsed_helper', '_rank_helper'],
 
   // 比較グラフのサイズ（ピクセル）
   CHART: {
@@ -75,10 +75,11 @@ function loadConfig_() {
   const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues();
   const kv   = Object.fromEntries(rows.filter(([k]) => k !== '').map(([k, v]) => [String(k), v]));
 
-  const split = s => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
+  const has   = key => Object.prototype.hasOwnProperty.call(kv, key);
+  const split = s   => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
 
-  if (kv['playlist_id']          != null) CONFIG.PLAYLIST_ID          = String(kv['playlist_id']);
-  if (kv['extra_video_ids'])              CONFIG.EXTRA_VIDEO_IDS       = split(kv['extra_video_ids']);
-  if (kv['watch_only_video_ids'])         CONFIG.WATCH_ONLY_VIDEO_IDS  = split(kv['watch_only_video_ids']);
-  if (kv['live_video_ids'])               CONFIG.LIVE_VIDEO_IDS        = split(kv['live_video_ids']);
+  if (has('playlist_id'))          CONFIG.PLAYLIST_ID          = String(kv['playlist_id']);
+  if (has('extra_video_ids'))      CONFIG.EXTRA_VIDEO_IDS       = split(kv['extra_video_ids']);
+  if (has('watch_only_video_ids')) CONFIG.WATCH_ONLY_VIDEO_IDS  = split(kv['watch_only_video_ids']);
+  if (has('live_video_ids'))       CONFIG.LIVE_VIDEO_IDS        = split(kv['live_video_ids']);
 }
