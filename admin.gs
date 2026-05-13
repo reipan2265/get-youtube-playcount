@@ -94,6 +94,7 @@ function debugLiveRanking() {
  * グラフやレイアウトを修正したい場合に使用する。
  */
 function rebuildComparisonSheet() {
+  loadConfig_();
   console.log('比較シートを再構築します...');
   updateComparisonSheet_(SpreadsheetApp.getActiveSpreadsheet());
   console.log('完了。');
