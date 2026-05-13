@@ -57,3 +57,28 @@ const CONFIG = {
 // ==========================================
 const MS_PER_DAY  = 24 * 60 * 60 * 1000;
 const MS_PER_HOUR =      60 * 60 * 1000;
+
+// ==========================================
+// 動的設定ローダー
+// ==========================================
+
+/**
+ * `_settings` シートから動的設定を読み込み CONFIG オブジェクトを上書きする。
+ * シートが存在しない場合は何もしない（config.gs のハードコード値が使われる）。
+ * WebUI から設定を変更すると次回のトリガー実行で反映される。
+ */
+function loadConfig_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName('_settings');
+  if (!sh || sh.getLastRow() < 2) return;
+
+  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues();
+  const kv   = Object.fromEntries(rows.filter(([k]) => k !== '').map(([k, v]) => [String(k), v]));
+
+  const split = s => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
+
+  if (kv['playlist_id']          != null) CONFIG.PLAYLIST_ID          = String(kv['playlist_id']);
+  if (kv['extra_video_ids'])              CONFIG.EXTRA_VIDEO_IDS       = split(kv['extra_video_ids']);
+  if (kv['watch_only_video_ids'])         CONFIG.WATCH_ONLY_VIDEO_IDS  = split(kv['watch_only_video_ids']);
+  if (kv['live_video_ids'])               CONFIG.LIVE_VIDEO_IDS        = split(kv['live_video_ids']);
+}
