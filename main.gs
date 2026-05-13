@@ -47,6 +47,7 @@ function main() {
     console.log('比較グラフのフォールバック更新完了。');
   }
 
+  sortVideoSheetsByPublishDate_(ss);
   console.log('データ更新完了。');
 }
 
