@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: '20'
@@ -28,3 +30,12 @@ jobs:
       - name: Authenticate clasp
         run: printf '%s' '${{ secrets.CLASPRC_JSON }}' > ~/.clasprc.json
       - run: clasp push --force
+      - name: Create GAS version
+        run: |
+          GIT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "untagged")
+          GIT_MSG=$(git log -1 --format='%s')
+          GAS_VERSION=$(clasp version "${GIT_TAG}: ${GIT_MSG}" | grep -oE '[0-9]+$')
+          echo "### GAS Version" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Git tag | GAS version |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ------- | ----------- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| \`${GIT_TAG}\` | ${GAS_VERSION} |" >> "$GITHUB_STEP_SUMMARY"
