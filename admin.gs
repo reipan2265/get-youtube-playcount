@@ -150,7 +150,7 @@ function ensureSettingsSheet() {
   }
 
   const rows = [
-    ['playlist_id',          CONFIG.PLAYLIST_ID,                          'プレイリスト ID（空文字で無効化）'],
+    ['playlist_ids',         CONFIG.PLAYLIST_IDS.join(','),                'プレイリスト ID（カンマ区切りで複数指定可）'],
     ['extra_video_ids',      CONFIG.EXTRA_VIDEO_IDS.join(','),             'プレイリスト外の追加動画 ID（カンマ区切り）'],
     ['watch_only_video_ids', CONFIG.WATCH_ONLY_VIDEO_IDS.join(','),        '推移のみ記録・比較シートに含めない動画 ID'],
     ['live_video_ids',       CONFIG.LIVE_VIDEO_IDS.join(','),              'ライブ配信アーカイブとして扱う動画 ID'],

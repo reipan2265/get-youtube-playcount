@@ -2,8 +2,8 @@
 // 設定エリア（ここだけ編集してOK）
 // ==========================================
 const CONFIG = {
-  // 対象プレイリストの ID（不要な場合は空文字）
-  PLAYLIST_ID: 'PLriG7RRWaKk-YG8N7y4Fr8C15NJqnkLYG',
+  // 対象プレイリストの ID 一覧（複数指定可、不要な場合は空配列）
+  PLAYLIST_IDS: ['PLriG7RRWaKk-YG8N7y4Fr8C15NJqnkLYG'],
 
   // プレイリスト外で個別追加したい動画 ID
   EXTRA_VIDEO_IDS: ['Z_BpyttvaKI', 'WGrgo8-8XwY'],
@@ -78,7 +78,7 @@ function loadConfig_() {
   const has   = key => Object.prototype.hasOwnProperty.call(kv, key);
   const split = s   => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
 
-  if (has('playlist_id'))          CONFIG.PLAYLIST_ID          = String(kv['playlist_id']);
+  if (has('playlist_ids'))         CONFIG.PLAYLIST_IDS          = split(kv['playlist_ids']);
   if (has('extra_video_ids'))      CONFIG.EXTRA_VIDEO_IDS       = split(kv['extra_video_ids']);
   if (has('watch_only_video_ids')) CONFIG.WATCH_ONLY_VIDEO_IDS  = split(kv['watch_only_video_ids']);
   if (has('live_video_ids'))       CONFIG.LIVE_VIDEO_IDS        = split(kv['live_video_ids']);

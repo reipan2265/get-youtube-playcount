@@ -3,6 +3,13 @@
 <!-- GAS version は deploy.yml の clasp version で自動作成されます。
      各リリースの GAS バージョン番号は GitHub Actions のジョブサマリーで確認できます。 -->
 
+## [1.2.0] - 2026-05-16
+### Changed
+- `CONFIG.PLAYLIST_ID`（単一文字列）を `CONFIG.PLAYLIST_IDS`（配列）に変更し複数プレイリストをサポート
+- `fetchPlaylistVideoIds_()` が `PLAYLIST_IDS` の全プレイリストを順に取得するよう変更
+- `_settings` シートのキーを `playlist_id` → `playlist_ids`（カンマ区切り複数対応）に変更
+- `loadConfig_()` が `playlist_ids` キーを読んで `PLAYLIST_IDS` 配列を上書きするよう変更
+
 ## [1.0.5] - 2026-05-13
 ### Changed
 - チャンネル内順位グラフをデータテーブル下の縦積みから行1の横一列並びに変更

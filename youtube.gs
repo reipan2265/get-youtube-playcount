@@ -190,23 +190,26 @@ function computeRanksByChannelGroups_(channelGroups) {
  * @returns {string[]}
  */
 function fetchPlaylistVideoIds_() {
-  if (!CONFIG.PLAYLIST_ID) return [];
+  if (!CONFIG.PLAYLIST_IDS || CONFIG.PLAYLIST_IDS.length === 0) return [];
 
   const ids = [];
-  let pageToken = '';
 
-  try {
-    do {
-      const res = YouTube.PlaylistItems.list('snippet', {
-        playlistId: CONFIG.PLAYLIST_ID,
-        maxResults: 50,
-        pageToken,
-      });
-      res.items.forEach(item => ids.push(item.snippet.resourceId.videoId));
-      pageToken = res.nextPageToken ?? '';
-    } while (pageToken);
-  } catch (e) {
-    console.warn(`プレイリスト取得失敗: ${e.message}`);
+  for (const playlistId of CONFIG.PLAYLIST_IDS) {
+    if (!playlistId) continue;
+    let pageToken = '';
+    try {
+      do {
+        const res = YouTube.PlaylistItems.list('snippet', {
+          playlistId,
+          maxResults: 50,
+          pageToken,
+        });
+        res.items.forEach(item => ids.push(item.snippet.resourceId.videoId));
+        pageToken = res.nextPageToken ?? '';
+      } while (pageToken);
+    } catch (e) {
+      console.warn(`プレイリスト取得失敗 (${playlistId}): ${e.message}`);
+    }
   }
 
   return ids;
