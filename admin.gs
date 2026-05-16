@@ -143,8 +143,16 @@ function ensureSettingsSheet() {
   sh.getRange(1, 1, 1, 3).setValues([['key', 'value', 'memo']]);
   sh.getRange(1, 1, 1, 3).setFontWeight('bold');
 
-  // 既にデータ行があれば書き込みをスキップ
+  // 既にデータ行がある場合は playlist_id → playlist_ids のキー移行のみ実施してスキップ
   if (sh.getLastRow() > 1) {
+    const rows      = sh.getRange(2, 1, sh.getLastRow() - 1, 3).getValues();
+    const oldKeyIdx = rows.findIndex(([k]) => k === 'playlist_id');
+    const newKeyIdx = rows.findIndex(([k]) => k === 'playlist_ids');
+    if (oldKeyIdx >= 0 && newKeyIdx < 0) {
+      sh.getRange(oldKeyIdx + 2, 1).setValue('playlist_ids');
+      sh.getRange(oldKeyIdx + 2, 3).setValue('プレイリスト ID（カンマ区切りで複数指定可）');
+      console.log('_settings の playlist_id キーを playlist_ids に移行しました。');
+    }
     console.log('_settings シートにはすでにデータが存在します。上書きをスキップしました。');
     return;
   }
