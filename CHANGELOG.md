@@ -3,6 +3,12 @@
 <!-- GAS version は deploy.yml の clasp version で自動作成されます。
      各リリースの GAS バージョン番号は GitHub Actions のジョブサマリーで確認できます。 -->
 
+## [1.2.1] - 2026-05-17
+### Changed
+- `deploy.yml`: `fetch-depth: 0` を廃止し `fetch-depth: 1` + `fetch-tags: true` に変更（全履歴取得を解消）
+- `auto-merge.yml`: `synchronize` トリガーを削除（push毎の不要な起動を抑制）
+- `claude-review.yml`: timeout-minutes を 15 → 10 に短縮
+
 ## [1.2.0] - 2026-05-16
 ### Changed
 - `CONFIG.PLAYLIST_ID`（単一文字列）を `CONFIG.PLAYLIST_IDS`（配列）に変更し複数プレイリストをサポート
