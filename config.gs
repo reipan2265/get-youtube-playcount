@@ -79,6 +79,7 @@ function loadConfig_() {
   const split = s   => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
 
   if (has('playlist_ids'))         CONFIG.PLAYLIST_IDS          = split(kv['playlist_ids']);
+  else if (has('playlist_id'))    CONFIG.PLAYLIST_IDS          = [String(kv['playlist_id'])].filter(Boolean);
   if (has('extra_video_ids'))      CONFIG.EXTRA_VIDEO_IDS       = split(kv['extra_video_ids']);
   if (has('watch_only_video_ids')) CONFIG.WATCH_ONLY_VIDEO_IDS  = split(kv['watch_only_video_ids']);
   if (has('live_video_ids'))       CONFIG.LIVE_VIDEO_IDS        = split(kv['live_video_ids']);
