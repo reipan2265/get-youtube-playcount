@@ -15,7 +15,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-tags: true
 
       - name: バージョンを検出
         id: version
