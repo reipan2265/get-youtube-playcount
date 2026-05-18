@@ -3,6 +3,11 @@
 <!-- GAS version は deploy.yml の clasp version で自動作成されます。
      各リリースの GAS バージョン番号は GitHub Actions のジョブサマリーで確認できます。 -->
 
+## [1.3.0] - 2026-05-19
+### Added
+- 再生数比較シートに「順位」列を追加（`チャンネル内順位` シートの最新データから取得）
+- `buildLatestRankMap_()` を追加: 順位シート最新行から `{ 動画タイトル: rank }` を返すヘルパー
+
 ## [1.2.1] - 2026-05-17
 ### Changed
 - `deploy.yml`: `fetch-depth: 0` を廃止し `fetch-depth: 1` + `fetch-tags: true` に変更（全履歴取得を解消）

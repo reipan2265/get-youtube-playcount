@@ -21,7 +21,7 @@ function updateComparisonTableOnly_(ss, excludeSheets) {
   const { dataMap, publishDateMap, sortedTimestamps } = aggregateVideoData_(videoSheets);
   if (sortedTimestamps.length === 0) return;
 
-  const { tableValues } = buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimestamps);
+  const { tableValues } = buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimestamps, ss);
 
   const rows = tableValues.length;
   const cols = tableValues[0].length;
@@ -29,6 +29,7 @@ function updateComparisonTableOnly_(ss, excludeSheets) {
   compSheet.getRange(1, 1, rows, cols).setValues(tableValues);
   compSheet.getRange(2, 2, rows - 1, 1).setNumberFormat('#,###').setFontWeight('bold');
   compSheet.getRange(2, 3, rows - 1, 1).setNumberFormat('0');
+  compSheet.getRange(2, 4, rows - 1, 1).setNumberFormat('0');
   SpreadsheetApp.flush();
   console.log('比較シートのテーブルを更新しました。');
 }
@@ -54,7 +55,7 @@ function updateComparisonSheet_(ss, excludeSheets) {
     return;
   }
 
-  const { tableValues } = buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimestamps);
+  const { tableValues } = buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimestamps, ss);
   renderComparisonSheet_(compSheet, tableValues);
 
   const { HEIGHT } = CONFIG.CHART;
@@ -146,17 +147,41 @@ function aggregateVideoData_(videoSheets) {
 }
 
 /**
+ * 「チャンネル内順位」シートの最新行から { 動画タイトル: rank } を返す。
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet|null} ss
+ * @returns {Object<string, number>}
+ */
+function buildLatestRankMap_(ss) {
+  if (!ss) return {};
+  const sheet = ss.getSheetByName(CONFIG.RANK_SHEET_NAME);
+  if (!sheet) return {};
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  if (lastRow < 3 || lastCol < 2) return {};
+  const titles      = sheet.getRange(2, 2, 1, lastCol - 1).getValues()[0];
+  const latestRanks = sheet.getRange(3, 2, 1, lastCol - 1).getValues()[0]; // 行3が最新（新しい順）
+  const map = {};
+  titles.forEach((t, i) => {
+    const raw = latestRanks[i];
+    if (t && typeof raw === 'number' && raw < 0) map[String(t)] = Math.round(-raw);
+  });
+  return map;
+}
+
+/**
  * 比較シート用のテーブルデータを構築する。
  * 動画行は最新再生数の降順でソートする。
  * @param {GoogleAppsScript.Spreadsheet.Sheet[]} videoSheets
  * @param {object}   dataMap
  * @param {object}   publishDateMap
  * @param {string[]} sortedTimestamps
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet|null} [ss]  順位取得用（省略可）
  * @returns {{ tableValues: any[][], sortedNames: string[], sortedTitles: string[] }}
  */
-function buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimestamps) {
+function buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimestamps, ss) {
   const now   = new Date();
   const nowMs = now.getTime();
+  const rankMap = buildLatestRankMap_(ss ?? null);
 
   const videoRows = videoSheets
     .map(sh => {
@@ -170,6 +195,8 @@ function buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimes
 
       const lastVal          = allData.length > 0 ? allData[0][1] : 0;
       const daysSincePublish = Math.floor((nowMs - pubDate.getTime()) / MS_PER_DAY);
+      const fullTitle        = sh.getRange('A1').getValue() || name;
+      const rank             = rankMap[fullTitle] ?? '';
 
       const fmt = (fromMs) =>
         formatIncreaseWithRate_(calcIncrease_(allData, lastVal, nowMs, fromMs, 0), lastVal);
@@ -181,6 +208,7 @@ function buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimes
         row: [
           titleFormula,
           lastVal,
+          rank,
           daysSincePublish,
           fmt(MS_PER_DAY),
           fmt(7 * MS_PER_DAY),
@@ -188,13 +216,13 @@ function buildComparisonTable_(videoSheets, dataMap, publishDateMap, sortedTimes
         ],
         lastVal,
         name,
-        fullTitle: sh.getRange('A1').getValue() || name,
+        fullTitle,
       };
     })
     .filter(Boolean)
     .sort((a, b) => b.lastVal - a.lastVal);
 
-  const headerRow = ['動画名', '最新再生数', '経過日数', '24h増加', '7日増加', '30日増加'];
+  const headerRow = ['動画名', '最新再生数', '順位', '経過日数', '24h増加', '7日増加', '30日増加'];
   return {
     tableValues:  [headerRow, ...videoRows.map(r => r.row)],
     sortedNames:  videoRows.map(r => r.name),
@@ -222,7 +250,8 @@ function renderComparisonSheet_(compSheet, tableValues) {
   compSheet.getRange(1, 1, rows, cols).setValues(tableValues);
   compSheet.getRange(1, 1, 1, cols).setBackground('#eeeeee').setFontWeight('bold');
   compSheet.getRange(2, 2, rows - 1, 1).setNumberFormat('#,###').setFontWeight('bold');
-  compSheet.getRange(2, 3, rows - 1, 1).setNumberFormat('0');
+  compSheet.getRange(2, 3, rows - 1, 1).setNumberFormat('0'); // 順位
+  compSheet.getRange(2, 4, rows - 1, 1).setNumberFormat('0'); // 経過日数
   compSheet.setFrozenRows(1);
 }
 
