@@ -168,6 +168,12 @@ function computeRanksByChannelGroups_(channelGroups) {
     const allIds    = fetchChannelVideoIds_(channelId);
     console.log(`チャンネル全動画: ${allIds.length} 本`);
 
+    // アップロードリスト取得失敗（空リスト）の場合は誤順位書き込みを防ぐためスキップ
+    if (allIds.length === 0) {
+      console.warn(`チャンネル ${channelId} のアップロードリストが空のため順位計算をスキップ`);
+      return;
+    }
+
     // アップロードリストに含まれない追跡動画を補完する
     const allIdsSet  = new Set(allIds);
     const missingIds = trackedIds.filter(id => !allIdsSet.has(id));
