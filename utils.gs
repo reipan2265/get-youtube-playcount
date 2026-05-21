@@ -104,10 +104,8 @@ function setNestedValue_(obj, key1, key2, value) {
  */
 function setSetting_(ss, key, value) {
   var sheet = ss.getSheetByName('_settings');
-  if (!sheet) {
-    sheet = ss.insertSheet('_settings');
-    sheet.appendRow(['key', 'value', 'memo']);
-  }
+  // シートが未作成の場合は不完全な状態を作らないようスキップ
+  if (!sheet) return;
   var data = sheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]) === key) {
