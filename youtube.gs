@@ -168,8 +168,22 @@ function computeRanksByChannelGroups_(channelGroups) {
     const allIds    = fetchChannelVideoIds_(channelId);
     console.log(`チャンネル全動画: ${allIds.length} 本`);
 
-    const viewCounts = fetchViewCountsOnly_(allIds);
-    const sorted     = allIds
+    // アップロードリスト取得失敗（空リスト）の場合は誤順位書き込みを防ぐためスキップ
+    if (allIds.length === 0) {
+      console.warn(`チャンネル ${channelId} のアップロードリストが空のため順位計算をスキップ`);
+      return;
+    }
+
+    // アップロードリストに含まれない追跡動画を補完する
+    const allIdsSet  = new Set(allIds);
+    const missingIds = trackedIds.filter(id => !allIdsSet.has(id));
+    if (missingIds.length > 0) {
+      console.log(`アップロードリスト未収録の追跡動画を補完: ${missingIds.join(', ')}`);
+    }
+    const allIdsExtended = missingIds.length > 0 ? [...allIds, ...missingIds] : allIds;
+
+    const viewCounts = fetchViewCountsOnly_(allIdsExtended);
+    const sorted     = allIdsExtended
       .filter(id => viewCounts[id] != null)
       .sort((a, b) => viewCounts[b] - viewCounts[a]);
 
@@ -178,7 +192,7 @@ function computeRanksByChannelGroups_(channelGroups) {
       rankMap[id]      = idx >= 0 ? idx + 1 : null;
       viewCountMap[id] = viewCounts[id] ?? null;
 
-      console.log(`チャンネル全体 ${id}: ${rankMap[id]}位 / ${allIds.length}本中`);
+      console.log(`チャンネル全体 ${id}: ${rankMap[id]}位 / ${sorted.length}本中`);
     });
   });
 

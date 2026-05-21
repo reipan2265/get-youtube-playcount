@@ -3,6 +3,11 @@
 <!-- GAS version は deploy.yml の clasp version で自動作成されます。
      各リリースの GAS バージョン番号は GitHub Actions のジョブサマリーで確認できます。 -->
 
+## [1.4.1] - 2026-05-22
+### Fixed
+- アップロードプレイリストに未収録の追跡動画（プレイリスト経由追加など）がチャンネル内順位を取得できない問題を修正
+  - `computeRanksByChannelGroups_` で追跡動画 ID を `allIds` に補完してから順位計算するように変更
+
 ## [1.4.0] - 2026-05-21
 ### Added
 - `main()` 実行後に `_settings` シートの `last_fetched_at` キーを現在時刻（ISO 8601）で更新
