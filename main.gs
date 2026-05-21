@@ -49,6 +49,7 @@ function main() {
   }
 
   sortVideoSheetsByPublishDate_(ss);
+  setSetting_(ss, 'last_fetched_at', now.toISOString());
   console.log('データ更新完了。');
 }
 

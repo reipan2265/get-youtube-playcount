@@ -3,6 +3,12 @@
 <!-- GAS version は deploy.yml の clasp version で自動作成されます。
      各リリースの GAS バージョン番号は GitHub Actions のジョブサマリーで確認できます。 -->
 
+## [1.4.0] - 2026-05-21
+### Added
+- `main()` 実行後に `_settings` シートの `last_fetched_at` キーを現在時刻（ISO 8601）で更新
+  - WebUI がこの値をポーリングして自動的にデータを再取得するための更新マーカー
+- `setSetting_(ss, key, value)` ユーティリティ関数を追加（`_settings` シートのキーを find-or-append で更新）
+
 ## [1.3.0] - 2026-05-19
 ### Added
 - 再生数比較シートに「順位」列を追加（`チャンネル内順位` シートの最新データから取得）

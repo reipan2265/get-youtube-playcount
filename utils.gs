@@ -95,3 +95,25 @@ function setNestedValue_(obj, key1, key2, value) {
   if (!obj[key1]) obj[key1] = {};
   obj[key1][key2] = value;
 }
+
+/**
+ * _settings シートの指定キーの値を更新する。キーが存在しない場合は末尾に追記する。
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * @param {string} key
+ * @param {string} value
+ */
+function setSetting_(ss, key, value) {
+  var sheet = ss.getSheetByName('_settings');
+  if (!sheet) {
+    sheet = ss.insertSheet('_settings');
+    sheet.appendRow(['key', 'value', 'memo']);
+  }
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === key) {
+      sheet.getRange(i + 1, 2).setValue(value);
+      return;
+    }
+  }
+  sheet.appendRow([key, value]);
+}
