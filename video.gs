@@ -38,7 +38,7 @@ function processVideo_(ss, id, index, total, now, preloadedVideo) {
     console.log(`[${index + 1}/${total}] ${sheetName}: ${viewCount.toLocaleString()} 回`);
 
     fillInitialGrowthCurve_(sheet, publishedAt);
-    runSampling_(sheet, publishedAt);
+    runSampling_(sheet);
     // グラフ更新は updateAllCharts() に分離（実行時間超過対策）
     sortVideoSheetDescending_(sheet);
     // ソート後のデータを1回読んで渡す（updateGrowthSummary_ 内の重複読み込みを省く）
@@ -146,25 +146,26 @@ function groupSheetsByChannel_(videoSheets) {
  * CONFIG.SAMPLING.RULES に従い、古いデータを間引いてシートの肥大化を抑制する。
  * バケツ方式で均等に間引くため、記録タイミングのズレに強い。
  * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
- * @param {Date} publishedAt
  */
-function runSampling_(sheet, publishedAt) {
+function runSampling_(sheet) {
   const dataCount = sheet.getLastRow() - 3;
   if (dataCount < CONFIG.SAMPLING.MIN_ROWS_TO_SAMPLE) return;
 
   const values     = sheet.getRange(4, 1, dataCount, 2).getValues();
   const seenBucket = new Set();
+  const now        = new Date();
 
   const keepRows = values.filter((row, index) => {
     if (index === 0 || index === values.length - 1) return true; // 先頭・末尾は必ず保持
     if (!(row[0] instanceof Date)) return false;
 
-    const ageDays = (row[0].getTime() - publishedAt.getTime()) / MS_PER_DAY;
+    // 現在時刻からの経過日数で判定（直近1か月は必ず全件保持）
+    const ageDays = (now.getTime() - row[0].getTime()) / MS_PER_DAY;
     const rule    = CONFIG.SAMPLING.RULES.find(r => ageDays <= r.maxDays);
 
     if (!rule || rule.keepEveryHours === null) return true;
 
-    const ageHours  = (row[0].getTime() - publishedAt.getTime()) / MS_PER_HOUR;
+    const ageHours  = (now.getTime() - row[0].getTime()) / MS_PER_HOUR;
     const bucketKey = `${rule.keepEveryHours}_${Math.floor(ageHours / rule.keepEveryHours)}`;
 
     if (seenBucket.has(bucketKey)) return false;
