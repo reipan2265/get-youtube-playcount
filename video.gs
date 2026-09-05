@@ -41,6 +41,7 @@ function processVideo_(ss, id, index, total, now, preloadedVideo) {
     runSampling_(sheet);
     // グラフ更新は updateAllCharts() に分離（実行時間超過対策）
     sortVideoSheetDescending_(sheet);
+    normalizeTimestampFormat_(sheet);
     // ソート後のデータを1回読んで渡す（updateGrowthSummary_ 内の重複読み込みを省く）
     const lastRow_ = sheet.getLastRow();
     const allData_ = lastRow_ >= 4 ? sheet.getRange(4, 1, lastRow_ - 3, 2).getValues() : [];
@@ -121,6 +122,22 @@ function sortVideoSheetDescending_(sheet) {
   const lastRow = sheet.getLastRow();
   if (lastRow <= 4) return;
   sheet.getRange(4, 1, lastRow - 3, 2).sort({ column: 1, ascending: false });
+}
+
+/**
+ * 動画シートの日時列（A列）の表示書式を統一する。
+ *
+ * Sheets は 00:00 ちょうどの Date を書き込むとそのセルを「日付のみ」書式に自動設定する。
+ * Range.sort() は値だけを並び替えて書式をセル位置に残すため、日付のみ書式のセルに
+ * 別の時刻の記録が入り込み、FORMATTED_VALUE で読むと時刻が 00:00 に潰れてしまう。
+ * （WebUI の再生数グラフが単調増加のはずの箇所で山になっていた原因）
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ */
+function normalizeTimestampFormat_(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 4) return;
+  sheet.getRange(4, 1, lastRow - 3, 1).setNumberFormat(TS_NUMBER_FORMAT);
 }
 
 /**

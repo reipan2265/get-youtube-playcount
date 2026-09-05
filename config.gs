@@ -55,6 +55,11 @@ const CONFIG = {
 // ==========================================
 // 定数
 // ==========================================
+// 動画シートの日時列（A列）に強制する表示書式。
+// 書式が「日付のみ」のセルに記録が入ると、Sheets API を FORMATTED_VALUE で読む側
+// （playcount-webui 等）で時刻が 00:00 に潰れ、時系列の並びが崩れる。
+const TS_NUMBER_FORMAT = 'yyyy/mm/dd hh:mm:ss';
+
 const MS_PER_DAY  = 24 * 60 * 60 * 1000;
 const MS_PER_HOUR =      60 * 60 * 1000;
 
