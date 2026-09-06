@@ -3,6 +3,11 @@
 <!-- GAS version は deploy.yml の clasp version で自動作成されます。
      各リリースの GAS バージョン番号は GitHub Actions のジョブサマリーで確認できます。 -->
 
+## [1.5.2] - 2026-09-06
+### Fixed
+- `_bookmarks` シートを `PRESERVE_SHEET_NAMES` に追加
+  - WebUI のブックマーク（動画選択の保存）が `resetSheets()` で消えないようにする
+
 ## [1.5.1] - 2026-09-05
 ### Fixed
 - 動画シートの日時列（A列）の表示書式を毎回 `yyyy/mm/dd hh:mm:ss` に統一するようにした
